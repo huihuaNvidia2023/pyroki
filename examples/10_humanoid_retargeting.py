@@ -60,14 +60,14 @@ def main():
     )
 
     # Get the left and right foot keypoints, projected on the heightmap.
-    left_foot_keypoint_idx = SMPL_JOINT_NAMES.index("left_foot")
-    right_foot_keypoint_idx = SMPL_JOINT_NAMES.index("right_foot")
-    left_foot_keypoints = smpl_keypoints[..., left_foot_keypoint_idx, :].reshape(-1, 3)
-    right_foot_keypoints = smpl_keypoints[..., right_foot_keypoint_idx, :].reshape(
-        -1, 3
-    )
-    left_foot_keypoints = heightmap.project_points(left_foot_keypoints)
-    right_foot_keypoints = heightmap.project_points(right_foot_keypoints)
+        # left_foot_keypoint_idx = SMPL_JOINT_NAMES.index("left_foot")
+        # right_foot_keypoint_idx = SMPL_JOINT_NAMES.index("right_foot")
+        # left_foot_keypoints = smpl_keypoints[..., left_foot_keypoint_idx, :].reshape(-1, 3)
+        # right_foot_keypoints = smpl_keypoints[..., right_foot_keypoint_idx, :].reshape(
+        #     -1, 3
+        # )
+        # left_foot_keypoints = heightmap.project_points(left_foot_keypoints)
+        # right_foot_keypoints = heightmap.project_points(right_foot_keypoints)
 
     smpl_joint_retarget_indices, g1_joint_retarget_indices = (
         get_humanoid_retarget_indices()
