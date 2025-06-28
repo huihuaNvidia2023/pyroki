@@ -12,3 +12,6 @@ from ._solve_ik_with_multiple_targets import (
 from ._solve_ik_with_multiple_targets_and_base import (
     solve_ik_with_multiple_targets_and_base as solve_ik_with_multiple_targets_and_base,
 )
+from ._solve_ik_with_multiple_targets_and_base_v2 import (
+    solve_ik_with_multiple_targets_and_base_v2 as solve_ik_with_multiple_targets_and_base_v2,
+)
