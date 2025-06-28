@@ -98,6 +98,9 @@ def main():
                 ik_target_left_ankle.wxyz, ik_target_right_ankle.wxyz, 
                 ik_target_left_palm.wxyz, ik_target_right_palm.wxyz
             ])
+            # Use normal weights when ankles are interactive
+            pos_weights = np.array([50.0, 50.0, 50.0, 50.0])
+            ori_weights = np.array([10.0, 10.0, 10.0, 10.0])
         else:
             # Use only hand targets, with fixed foot positions
             target_link_names = all_target_link_names  # Still include all for stability
@@ -109,6 +112,9 @@ def main():
                 fixed_ankle_wxyz, fixed_ankle_wxyz,  # Fixed orientations
                 ik_target_left_palm.wxyz, ik_target_right_palm.wxyz
             ])
+            # Use very high weights for feet to keep them pinned
+            pos_weights = np.array([100.0, 100.0, 50.0, 50.0])  # 100x higher for feet
+            ori_weights = np.array([20.0, 20.0, 10.0, 10.0])  # 100x higher for feet
 
         # Solve IK with mobile base.
         start_time = time.time()
@@ -122,6 +128,8 @@ def main():
             prev_pos=base_pos,
             prev_wxyz=base_wxyz,
             prev_cfg=cfg,
+            pos_weights=pos_weights,
+            ori_weights=ori_weights,
         )
 
         # Update timing handle.

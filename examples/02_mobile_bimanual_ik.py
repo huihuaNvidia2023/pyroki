@@ -66,6 +66,9 @@ def main():
             prev_pos=base_pos,
             prev_wxyz=base_wxyz,
             prev_cfg=cfg,
+            # Use default weights (will be 50.0 for position, 10.0 for orientation)
+            pos_weights=None,
+            ori_weights=None,
         )
 
         # Update timing handle.

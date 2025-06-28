@@ -23,6 +23,8 @@ def solve_ik_with_multiple_targets_and_base(
     prev_pos: onp.ndarray,
     prev_wxyz: onp.ndarray,
     prev_cfg: onp.ndarray,
+    pos_weights: onp.ndarray | None = None,
+    ori_weights: onp.ndarray | None = None,
 ) -> tuple[onp.ndarray, onp.ndarray, onp.ndarray]:
     """
     Solves the basic IK problem for a robot.
@@ -35,6 +37,8 @@ def solve_ik_with_multiple_targets_and_base(
         fix_base_position: Whether to fix the base position (x, y, z).
         fix_base_orientation: Whether to fix the base orientation (w_x, w_y, w_z).
         prev_pos, prev_wxyz, prev_cfg: Previous base position, orientation, and joint configuration, for smooth motion.
+        pos_weights: onp.ndarray. Shape: (num_targets,). Position weights for each target. If None, uses default 50.0.
+        ori_weights: onp.ndarray. Shape: (num_targets,). Orientation weights for each target. If None, uses default 10.0.
     Returns:
         base_pos: onp.ndarray. Shape: (3,).
         base_wxyz: onp.ndarray. Shape: (4,).
@@ -45,6 +49,16 @@ def solve_ik_with_multiple_targets_and_base(
     assert target_wxyzs.shape == (num_targets, 4)
     assert prev_pos.shape == (3,) and prev_wxyz.shape == (4,)
     assert prev_cfg.shape == (robot.joints.num_actuated_joints,)
+    
+    # Set default weights if not provided
+    if pos_weights is None:
+        pos_weights = onp.full(num_targets, 50.0)
+    if ori_weights is None:
+        ori_weights = onp.full(num_targets, 10.0)
+    
+    assert pos_weights.shape == (num_targets,)
+    assert ori_weights.shape == (num_targets,)
+    
     target_link_indices = [robot.links.names.index(name) for name in target_link_names]
 
     base_pose, cfg = _solve_ik_jax(
@@ -56,6 +70,8 @@ def solve_ik_with_multiple_targets_and_base(
         jnp.array(prev_pos),
         jnp.array(prev_wxyz),
         jnp.array(prev_cfg),
+        jnp.array(pos_weights),
+        jnp.array(ori_weights),
     )
     assert cfg.shape == (robot.joints.num_actuated_joints,)
 
@@ -76,6 +92,8 @@ def _solve_ik_jax(
     prev_pos: jnp.ndarray,
     prev_wxyz: jnp.ndarray,
     prev_cfg: jnp.ndarray,
+    pos_weights: jax.Array,
+    ori_weights: jax.Array,
 ) -> tuple[jaxlie.SE3, jax.Array]:
     JointVar = robot.joint_var_cls
   
@@ -111,8 +129,8 @@ def _solve_ik_jax(
             ConstrainedSE3Var(jnp.full(batch_axes, 0)),
             target_pose,
             target_joint_indices,
-            pos_weight=50.0,
-            ori_weight=10.0,
+            pos_weight=pos_weights,
+            ori_weight=ori_weights,
         ),
         pk.costs.limit_cost(
             robot,
