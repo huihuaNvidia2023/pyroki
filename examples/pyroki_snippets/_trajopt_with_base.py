@@ -15,21 +15,21 @@ from jax.typing import ArrayLike
 
 
 def solve_trajopt_with_base(
-    robot: pk.Robot,
-    foot_link_names: Sequence[str],
-    hand_link_names: Sequence[str],
-    foot_positions: ArrayLike,    # Shape: (num_feet, 3)
-    foot_wxyzs: ArrayLike,    # Shape: (num_feet, 4)
-    hand_start_positions: ArrayLike,    # Shape: (num_hands, 3)
-    hand_start_wxyzs: ArrayLike,    # Shape: (num_hands, 4)
-    hand_end_positions: ArrayLike,    # Shape: (num_hands, 3)
-    hand_end_wxyzs: ArrayLike,    # Shape: (num_hands, 4)
-    fix_base_position: Tuple[bool, bool, bool],
-    fix_base_orientation: Tuple[bool, bool, bool],
-    timesteps: int,
-    dt: float,
-    prev_pos: ArrayLike,    # Initial base position
-    prev_wxyz: ArrayLike,    # Initial base orientation
+        robot: pk.Robot,
+        foot_link_names: Sequence[str],
+        hand_link_names: Sequence[str],
+        foot_positions: ArrayLike,    # Shape: (num_feet, 3)
+        foot_wxyzs: ArrayLike,    # Shape: (num_feet, 4)
+        hand_start_positions: ArrayLike,    # Shape: (num_hands, 3)
+        hand_start_wxyzs: ArrayLike,    # Shape: (num_hands, 4)
+        hand_end_positions: ArrayLike,    # Shape: (num_hands, 3)
+        hand_end_wxyzs: ArrayLike,    # Shape: (num_hands, 4)
+        fix_base_position: Tuple[bool, bool, bool],
+        fix_base_orientation: Tuple[bool, bool, bool],
+        timesteps: int,
+        dt: float,
+        prev_pos: ArrayLike,    # Initial base position
+        prev_wxyz: ArrayLike,    # Initial base orientation
 ) -> Tuple[ArrayLike, ArrayLike, ArrayLike]:
     """
     Solve trajectory optimization for a mobile robot with multiple end-effectors.
@@ -169,6 +169,26 @@ def _solve_start_end_iks(
         jnp.full(num_hands, 10.0),    # Normal weight for hands
     ])
 
+    # NOTE: The rest_with_base_cost in solve_ik_with_multiple_targets_and_base uses:
+    # - joint_var.default_factory() for joint rest pose (can be customized)
+    # - identity for base rest pose (always [0,0,0] position, identity rotation)
+    # If you need a different base rest pose, you'd need to modify the cost function
+    # or create a custom one that accepts a target base pose parameter.
+
+    # Example of how to use the new rest_with_base_cost_custom function:
+    # rest_joint_pose = robot.joint_var_cls(0).default_factory()  # or custom joint config
+    # rest_base_pose = jaxlie.SE3.from_rotation_and_translation(
+    #     jaxlie.SO3(prev_wxyz),  # Use initial orientation as rest
+    #     prev_pos                # Use initial position as rest
+    # )
+    # pk.costs.rest_with_base_cost_custom(
+    #     joint_var,
+    #     base_var,
+    #     rest_joint_pose,
+    #     rest_base_pose,
+    #     jnp.array([0.01] * robot.joints.num_actuated_joints + [0.1] * 3 + [0.001] * 3)
+    # )
+
     # Extract base constraints
     fix_base_position = fix_base[:3]
     fix_base_orientation = fix_base[3:]
@@ -182,8 +202,8 @@ def _solve_start_end_iks(
     start_base_pos, start_base_wxyz, start_cfg = solve_ik_with_multiple_targets_and_base(
         robot=robot,
         target_link_names=all_link_names,
-        target_positions=start_positions,
-        target_wxyzs=start_wxyzs,
+        target_wxyzs=start_wxyzs,    # wxyzs comes first
+        target_positions=start_positions,    # positions comes second
         fix_base_position=tuple(fix_base_position),
         fix_base_orientation=tuple(fix_base_orientation),
         prev_pos=prev_pos,
@@ -200,8 +220,8 @@ def _solve_start_end_iks(
     end_base_pos, end_base_wxyz, end_cfg = solve_ik_with_multiple_targets_and_base(
         robot=robot,
         target_link_names=all_link_names,
-        target_positions=end_positions,
-        target_wxyzs=end_wxyzs,
+        target_wxyzs=end_wxyzs,    # wxyzs comes first
+        target_positions=end_positions,    # positions comes second
         fix_base_position=tuple(fix_base_position),
         fix_base_orientation=tuple(fix_base_orientation),
         prev_pos=start_base_pos,

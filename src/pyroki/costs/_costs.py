@@ -44,7 +44,7 @@ def pose_cost_with_base(
     assert target_link_indices.dtype == jnp.int32
     joint_cfg = vals[joint_var]
     T_world_base = vals[T_world_base_var]
-    Ts_base_link = robot.forward_kinematics(joint_cfg)  # FK is T_base_link
+    Ts_base_link = robot.forward_kinematics(joint_cfg)    # FK is T_base_link
     T_base_target_link = jaxlie.SE3(Ts_base_link[..., target_link_indices, :])
     T_world_target_link_actual = T_world_base @ T_base_target_link
 
@@ -116,6 +116,39 @@ def rest_with_base_cost(
 
 
 @Cost.create_factory
+def rest_with_base_cost_custom(
+    vals: VarValues,
+    joint_var: Var[Array],
+    T_world_base_var: Var[jaxlie.SE3],
+    rest_joint_pose: Array,
+    rest_base_pose: jaxlie.SE3,
+    weight: Array | float,
+) -> Array:
+    """Computes the residual biasing joints and base towards custom rest poses.
+    
+    Args:
+        vals: Variable values
+        joint_var: Joint configuration variable
+        T_world_base_var: Base transform variable
+        rest_joint_pose: Target joint configuration
+        rest_base_pose: Target base pose (SE3 transform)
+        weight: Weights for each DOF (joints + 3 position + 3 orientation)
+    
+    Returns:
+        Weighted residual vector
+    """
+    # Joint residual
+    residual_joints = vals[joint_var] - rest_joint_pose
+
+    # Base residual: log of relative transform from rest to current
+    current_base = vals[T_world_base_var]
+    relative_transform = rest_base_pose.inverse() @ current_base
+    residual_base = relative_transform.log()
+
+    return (jnp.concatenate([residual_joints, residual_base]) * weight).flatten()
+
+
+@Cost.create_factory
 def smoothness_cost(
     vals: VarValues,
     curr_joint_var: Var[Array],
@@ -135,9 +168,8 @@ def _compute_manip_yoshikawa(
     target_link_index: jax.Array,
 ) -> Array:
     """Helper: Computes manipulability measure for a single link."""
-    jacobian = jax.jacfwd(
-        lambda q: jaxlie.SE3(robot.forward_kinematics(q)).translation()
-    )(cfg)[target_link_index]
+    jacobian = jax.jacfwd(lambda q: jaxlie.SE3(robot.forward_kinematics(q)).translation())(
+        cfg)[target_link_index]
     JJT = jacobian @ jacobian.T
     assert JJT.shape == (3, 3)
     return jnp.sqrt(jnp.maximum(0.0, jnp.linalg.det(JJT)))
@@ -156,9 +188,8 @@ def manipulability_cost(
     if target_link_indices.ndim == 0:
         vmapped_manip = _compute_manip_yoshikawa(cfg, robot, target_link_indices)
     else:
-        vmapped_manip = jax.vmap(_compute_manip_yoshikawa, in_axes=(None, None, 0))(
-            cfg, robot, target_link_indices
-        )
+        vmapped_manip = jax.vmap(_compute_manip_yoshikawa,
+                                 in_axes=(None, None, 0))(cfg, robot, target_link_indices)
     residual = 1.0 / (vmapped_manip + 1e-6)
     return (residual * weight).flatten()
 
@@ -205,7 +236,7 @@ def world_collision_cost(
 @Cost.create_factory
 def five_point_velocity_cost(
     vals: VarValues,
-    robot: Robot,  # Needed for limits
+    robot: Robot,    # Needed for limits
     var_t_plus_2: Var[Array],
     var_t_plus_1: Var[Array],
     var_t_minus_1: Var[Array],
@@ -267,7 +298,5 @@ def five_point_jerk_cost(
     q_tp2 = vals[var_t_plus_2]
     q_tp3 = vals[var_t_plus_3]
 
-    jerk = (-q_tp3 + 8 * q_tp2 - 13 * q_tp1 + 13 * q_tm1 - 8 * q_tm2 + q_tm3) / (
-        8 * dt**3
-    )
+    jerk = (-q_tp3 + 8 * q_tp2 - 13 * q_tp1 + 13 * q_tm1 - 8 * q_tm2 + q_tm3) / (8 * dt**3)
     return (jerk * weight).flatten()

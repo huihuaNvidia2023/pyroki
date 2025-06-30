@@ -8,6 +8,7 @@ from ._costs import pose_cost as pose_cost
 from ._costs import pose_cost_with_base as pose_cost_with_base
 from ._costs import rest_cost as rest_cost
 from ._costs import rest_with_base_cost as rest_with_base_cost
+from ._costs import rest_with_base_cost_custom as rest_with_base_cost_custom
 from ._costs import self_collision_cost as self_collision_cost
 from ._costs import smoothness_cost as smoothness_cost
 from ._costs import world_collision_cost as world_collision_cost
