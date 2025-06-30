@@ -31,7 +31,7 @@ def com_support_polygon_cost(
     precomputed_directions = jnp.stack([jnp.cos(angles), jnp.sin(angles)], axis=1)    # [D, 2]
 
     # Precompute foot corners here too, capturing robot_description in closure
-    local_corners = compute_foot_local_corners(robot_description)
+    local_corners = compute_foot_local_corners(robot_description=robot_description)
 
     @Cost.create_factory
     def _com_support_polygon_cost_impl(

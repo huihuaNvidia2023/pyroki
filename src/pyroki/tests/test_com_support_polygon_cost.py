@@ -85,139 +85,6 @@ def verify_com_in_polygon(robot,
     return is_inside, com_xy, corners_xy
 
 
-def visualize_com_and_polygon(urdf_string,
-                              joint_config,
-                              base_pose,
-                              com_xy,
-                              corners_xy,
-                              test_name="COM Support Polygon"):
-    """Visualize the robot, COM, and support polygon."""
-    import viser
-    from viser.extras import ViserUrdf
-
-    # Create viser server
-    server = viser.ViserServer()
-    server.scene.add_grid("/ground", width=2, height=2, cell_size=0.1)
-
-    # Add base frame and robot visualization
-    base_frame = server.scene.add_frame("/base", show_axes=False)
-    urdf_vis = ViserUrdf(server, urdf_string, root_node_name="/base")
-
-    # Update robot configuration
-    if base_pose is not None:
-        base_frame.position = np.array(base_pose.translation())
-        # Extract quaternion from SE3 (wxyz format)
-        wxyz_xyz = base_pose.wxyz_xyz
-        base_frame.wxyz = np.array(wxyz_xyz[:4])    # First 4 elements are wxyz quaternion
-    # Convert JAX array to numpy for ViserUrdf
-    urdf_vis.update_cfg(np.array(joint_config))
-
-    # Visualize support polygon
-    # Add polygon corners as small spheres
-    for i, corner in enumerate(corners_xy):
-        server.scene.add_icosphere(
-            f"/polygon/corner_{i}",
-            radius=0.01,
-            color=(0, 255, 0),    # Green for polygon corners
-            position=(float(corner[0]), float(corner[1]), 0.01)    # Slightly above ground
-        )
-
-    # Connect polygon corners with lines (simple convex hull visualization)
-    # For humanoid with 2 feet, we have 8 corners (4 per foot)
-    # We'll draw rectangles for each foot
-    num_corners = len(corners_xy)
-    if num_corners == 8:    # 2 feet with 4 corners each
-        # Draw rectangles for each foot
-        for foot_idx in range(2):
-            foot_corners = corners_xy[foot_idx * 4:(foot_idx + 1) * 4]
-            # Connect corners in order: 0-1-2-3-0
-            for i in range(4):
-                start = foot_corners[i]
-                end = foot_corners[(i + 1) % 4]
-
-                # Create line by adding many small spheres
-                num_points = 10
-                for j in range(num_points):
-                    t = j / (num_points - 1)
-                    point = start * (1 - t) + end * t
-                    server.scene.add_icosphere(f"/polygon/foot{foot_idx}_edge_{i}_{j}",
-                                               radius=0.003,
-                                               color=(0, 200, 0),
-                                               position=(float(point[0]), float(point[1]), 0.01))
-    else:
-        # For other cases, just connect consecutive corners
-        for i in range(num_corners):
-            start = corners_xy[i]
-            end = corners_xy[(i + 1) % num_corners]
-
-            num_points = 10
-            for j in range(num_points):
-                t = j / (num_points - 1)
-                point = start * (1 - t) + end * t
-                server.scene.add_icosphere(f"/polygon/edge_{i}_{j}",
-                                           radius=0.003,
-                                           color=(0, 200, 0),
-                                           position=(float(point[0]), float(point[1]), 0.01))
-
-    # Visualize COM projection
-    # Add COM point
-    server.scene.add_icosphere(
-        "/com_projection",
-        radius=0.02,
-        color=(255, 0, 0),    # Red for COM
-        position=(float(com_xy[0]), float(com_xy[1]), 0.02)    # Slightly above ground
-    )
-
-    # Add vertical line from COM to ground
-    com_3d_height = 0.5    # Approximate COM height for visualization
-    num_points = 20
-    for i in range(num_points):
-        z = com_3d_height * (1 - i / (num_points - 1))
-        server.scene.add_icosphere(f"/com_line/{i}",
-                                   radius=0.002,
-                                   color=(200, 0, 0),
-                                   position=(float(com_xy[0]), float(com_xy[1]), z))
-
-    # Add labels
-    server.scene.add_label("/com_projection/label", text="COM", position=(0, 0, 0.05))
-
-    # Add title and info
-    info_text = server.gui.add_text("Test Info", test_name, disabled=True)
-    com_text = server.gui.add_text("COM Position",
-                                   f"({com_xy[0]:.3f}, {com_xy[1]:.3f})",
-                                   disabled=True)
-
-    # Check if COM is inside polygon
-    angles = jnp.linspace(0, 2 * jnp.pi, 16, endpoint=False)
-    directions = jnp.stack([jnp.cos(angles), jnp.sin(angles)], axis=1)
-    corners_proj = corners_xy @ directions.T
-    com_proj = com_xy @ directions.T
-    margins = corners_proj.max(axis=0) - com_proj
-    min_margin = margins.min()
-    is_inside = jnp.all(margins >= -1e-6)
-
-    status_text = server.gui.add_text("Status",
-                                      "✓ Inside" if is_inside else "✗ Outside",
-                                      disabled=True)
-    margin_text = server.gui.add_text("Min Margin", f"{min_margin:.3f} m", disabled=True)
-
-    close_button = server.gui.add_button("Close Visualization")
-
-    print(f"\nVisualization server running at: http://localhost:{server.get_port()}")
-    print("Click 'Close Visualization' button or Ctrl+C to continue...")
-
-    # Wait for close button or interrupt
-    try:
-        while True:
-            if close_button.value:
-                break
-            time.sleep(0.1)
-    except KeyboardInterrupt:
-        pass
-
-    server.stop()
-
-
 def test_com_support_polygon_basic(visualize=False):
     """Test basic COM support polygon cost with G1 humanoid robot."""
     # Define robot description
@@ -263,32 +130,68 @@ def test_com_support_polygon_basic(visualize=False):
 
     optimized_config = solution[joint_var]
 
-    # Verify COM is inside support polygon
-    is_inside, com_xy, corners_xy = verify_com_in_polygon(robot, optimized_config,
-                                                          foot_link_indices, robot_description)
-
-    assert is_inside, f"COM at {com_xy} is outside support polygon!"
-
-    # Compute minimum margin for info
-    angles = jnp.linspace(0, 2 * jnp.pi, 16, endpoint=False)
-    directions = jnp.stack([jnp.cos(angles), jnp.sin(angles)], axis=1)
-    corners_proj = corners_xy @ directions.T
-    com_proj = com_xy @ directions.T
-    margins = corners_proj.max(axis=0) - com_proj
-    min_margin = margins.min()
-
-    print(f"✓ Basic COM support polygon cost test passed!")
-    print(f"  - COM position (X,Y): ({com_xy[0]:.3f}, {com_xy[1]:.3f})")
-    print(f"  - Minimum margin to boundary: {min_margin:.3f} m")
-
     # Visualize if requested
     if visualize:
-        visualize_com_and_polygon(urdf_string,
-                                  optimized_config,
-                                  None,
-                                  com_xy,
-                                  corners_xy,
-                                  test_name="Basic COM Support Polygon Test")
+        import viser
+        from viser.extras import ViserUrdf
+
+        # Create viser server
+        server = viser.ViserServer()
+        server.scene.add_grid("/ground", width=2, height=2, cell_size=0.1)
+
+        # Add robot visualization
+        base_frame = server.scene.add_frame("/base", show_axes=False)
+        urdf_vis = ViserUrdf(server, urdf_string, root_node_name="/base")
+        urdf_vis.update_cfg(np.array(optimized_config))
+
+        # Create support polygon visualizer
+        support_viz = pk.viewer.SupportPolygonVisualizer(
+            server,
+            robot,
+            robot_description,
+            root_node_name="/support_polygon_basic",
+            com_color=(255, 50, 50),
+            polygon_color=(50, 255, 50),
+        )
+
+        # Update visualization
+        support_viz.update(optimized_config)
+
+        # Add status information
+        status_text = server.gui.add_text("Status", support_viz.get_status_text(), disabled=True)
+
+        close_button = server.gui.add_button("Close Visualization")
+
+        print(f"\nVisualization server running at: http://localhost:{server.get_port()}")
+        print("Click 'Close Visualization' button or Ctrl+C to continue...")
+
+        # Wait for close button or interrupt
+        try:
+            while True:
+                if close_button.value:
+                    break
+                # Update status text
+                status_text.value = support_viz.get_status_text()
+                time.sleep(0.1)
+        except KeyboardInterrupt:
+            pass
+
+        support_viz.remove()
+        server.stop()
+
+    # Verify results using the visualizer's internal calculations
+    test_viz = pk.viewer.SupportPolygonVisualizer(
+        None,    # No server needed for calculation only
+        robot,
+        robot_description,
+        visible=False)
+    test_viz.update(optimized_config)
+
+    assert test_viz.is_inside, f"COM at {test_viz.com_xy} is outside support polygon!"
+
+    print(f"✓ Basic COM support polygon cost test passed!")
+    print(f"  - COM position (X,Y): ({test_viz.com_xy[0]:.3f}, {test_viz.com_xy[1]:.3f})")
+    print(f"  - Minimum margin to boundary: {test_viz.min_margin:.3f} m")
 
     return optimized_config
 
@@ -347,35 +250,82 @@ def test_com_support_polygon_with_base(visualize=False):
     optimized_config = solution[joint_var]
     optimized_base = solution[base_var]
 
-    # Verify COM is inside support polygon
-    is_inside, com_xy, corners_xy = verify_com_in_polygon(robot, optimized_config,
-                                                          foot_link_indices, robot_description,
-                                                          optimized_base)
-
-    assert is_inside, f"COM at {com_xy} is outside support polygon!"
-
-    # Compute minimum margin for info
-    angles = jnp.linspace(0, 2 * jnp.pi, 16, endpoint=False)
-    directions = jnp.stack([jnp.cos(angles), jnp.sin(angles)], axis=1)
-    corners_proj = corners_xy @ directions.T
-    com_proj = com_xy @ directions.T
-    margins = corners_proj.max(axis=0) - com_proj
-    min_margin = margins.min()
-
-    print(f"✓ COM support polygon cost with base test passed!")
-    print(f"  - COM position (X,Y): ({com_xy[0]:.3f}, {com_xy[1]:.3f})")
-    print(f"  - Minimum margin to boundary: {min_margin:.3f} m")
-    print(f"  - Base position: ({optimized_base.translation()[0]:.3f}, "
-          f"{optimized_base.translation()[1]:.3f}, {optimized_base.translation()[2]:.3f})")
-
     # Visualize if requested
     if visualize:
-        visualize_com_and_polygon(urdf_string,
-                                  optimized_config,
-                                  optimized_base,
-                                  com_xy,
-                                  corners_xy,
-                                  test_name="COM Support Polygon with Mobile Base Test")
+        import viser
+        from viser.extras import ViserUrdf
+
+        # Create viser server
+        server = viser.ViserServer()
+        server.scene.add_grid("/ground", width=2, height=2, cell_size=0.1)
+
+        # Add base frame and robot visualization
+        base_frame = server.scene.add_frame("/base", show_axes=False)
+        urdf_vis = ViserUrdf(server, urdf_string, root_node_name="/base")
+
+        # Update robot configuration
+        base_frame.position = np.array(optimized_base.translation())
+        wxyz_xyz = optimized_base.wxyz_xyz
+        base_frame.wxyz = np.array(wxyz_xyz[:4])    # First 4 elements are wxyz quaternion
+        urdf_vis.update_cfg(np.array(optimized_config))
+
+        # Create support polygon visualizer
+        support_viz = pk.viewer.SupportPolygonVisualizer(
+            server,
+            robot,
+            robot_description,
+            root_node_name="/support_polygon_mobile",
+            com_color=(255, 100, 100),
+            polygon_color=(100, 255, 100),
+            show_com_line=True,
+            com_line_height=0.8,
+        )
+
+        # Update visualization
+        support_viz.update(optimized_config, optimized_base)
+
+        # Add status information
+        status_text = server.gui.add_text("Status", support_viz.get_status_text(), disabled=True)
+
+        base_text = server.gui.add_text(
+            "Base Position", f"({optimized_base.translation()[0]:.3f}, "
+            f"{optimized_base.translation()[1]:.3f}, {optimized_base.translation()[2]:.3f})",
+            disabled=True)
+
+        close_button = server.gui.add_button("Close Visualization")
+
+        print(f"\nVisualization server running at: http://localhost:{server.get_port()}")
+        print("Click 'Close Visualization' button or Ctrl+C to continue...")
+
+        # Wait for close button or interrupt
+        try:
+            while True:
+                if close_button.value:
+                    break
+                # Update status text
+                status_text.value = support_viz.get_status_text()
+                time.sleep(0.1)
+        except KeyboardInterrupt:
+            pass
+
+        support_viz.remove()
+        server.stop()
+
+    # Verify results using the visualizer's internal calculations
+    test_viz = pk.viewer.SupportPolygonVisualizer(
+        None,    # No server needed for calculation only
+        robot,
+        robot_description,
+        visible=False)
+    test_viz.update(optimized_config, optimized_base)
+
+    assert test_viz.is_inside, f"COM at {test_viz.com_xy} is outside support polygon!"
+
+    print(f"✓ COM support polygon cost with base test passed!")
+    print(f"  - COM position (X,Y): ({test_viz.com_xy[0]:.3f}, {test_viz.com_xy[1]:.3f})")
+    print(f"  - Minimum margin to boundary: {test_viz.min_margin:.3f} m")
+    print(f"  - Base position: ({optimized_base.translation()[0]:.3f}, "
+          f"{optimized_base.translation()[1]:.3f}, {optimized_base.translation()[2]:.3f})")
 
     return optimized_config, optimized_base
 
