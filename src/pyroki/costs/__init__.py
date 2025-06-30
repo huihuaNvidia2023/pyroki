@@ -1,3 +1,5 @@
+from ._com_support_polygon_cost import com_support_polygon_cost as com_support_polygon_cost
+from ._com_support_polygon_cost import com_support_polygon_cost_with_base as com_support_polygon_cost_with_base
 from ._costs import five_point_acceleration_cost as five_point_acceleration_cost
 from ._costs import five_point_jerk_cost as five_point_jerk_cost
 from ._costs import five_point_velocity_cost as five_point_velocity_cost
