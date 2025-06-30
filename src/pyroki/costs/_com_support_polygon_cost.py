@@ -7,13 +7,14 @@ from jax import Array
 from jaxls import Cost, Var, VarValues
 
 from .._robot import Robot
+from ..robots_config import compute_foot_local_corners
 
 
 def com_support_polygon_cost(
     robot: Robot,
     joint_var: Var[Array],
     foot_link_indices: Array,
-    foot_dimensions: tuple[float, float],    # (length, width)
+    robot_description: str,
     num_directions: int,
     weight: Array | float,
     margin_threshold: float = 0.0,
@@ -24,9 +25,13 @@ def com_support_polygon_cost(
     
     This factory function precomputes the sampling directions to avoid JAX tracing issues.
     """
+
     # Precompute directions here, before JAX tracing
     angles = jnp.linspace(0, 2 * jnp.pi, num_directions, endpoint=False)
     precomputed_directions = jnp.stack([jnp.cos(angles), jnp.sin(angles)], axis=1)    # [D, 2]
+
+    # Precompute foot corners here too, capturing robot_description in closure
+    local_corners = compute_foot_local_corners(robot_description)
 
     @Cost.create_factory
     def _com_support_polygon_cost_impl(
@@ -34,7 +39,6 @@ def com_support_polygon_cost(
         robot: Robot,
         joint_var: Var[Array],
         foot_link_indices: Array,
-        foot_dimensions: tuple[float, float],
         weight: Array | float,
         margin_threshold: float,
     ) -> Array:
@@ -49,16 +53,7 @@ def com_support_polygon_cost(
         foot_poses_wxyz_xyz = link_poses[foot_link_indices]    # Shape: [F, 7]
         foot_poses = jaxlie.SE3(foot_poses_wxyz_xyz)
 
-        # Define local foot corners
-        L, W = foot_dimensions
-        local_corners = jnp.array([
-            [L / 2, W / 2, 0],
-            [L / 2, -W / 2, 0],
-            [-L / 2, -W / 2, 0],
-            [-L / 2, W / 2, 0],
-        ])    # Shape: [4, 3]
-
-        # Apply transformation for each foot
+        # Apply transformation for each foot using precomputed local corners
         def transform_foot_corners(foot_pose):
             """Transform local corners to world coordinates for one foot."""
             world_corners = jax.vmap(foot_pose.apply)(local_corners)
@@ -104,12 +99,11 @@ def com_support_polygon_cost(
 
         return (residuals * weight).flatten()
 
-    # Return the cost created without passing directions as an argument
+    # Return the cost created without passing robot_description as an argument
     return _com_support_polygon_cost_impl(
         robot,
         joint_var,
         foot_link_indices,
-        foot_dimensions,
         weight,
         margin_threshold,
     )
@@ -120,7 +114,7 @@ def com_support_polygon_cost_with_base(
     joint_var: Var[Array],
     T_world_base_var: Var[jaxlie.SE3],
     foot_link_indices: Array,
-    foot_dimensions: tuple[float, float],
+    robot_description: str,
     num_directions: int,
     weight: Array | float,
     margin_threshold: float = 0.0,
@@ -131,9 +125,13 @@ def com_support_polygon_cost_with_base(
     
     This factory function precomputes the sampling directions to avoid JAX tracing issues.
     """
+
     # Precompute directions here, before JAX tracing
     angles = jnp.linspace(0, 2 * jnp.pi, num_directions, endpoint=False)
     precomputed_directions = jnp.stack([jnp.cos(angles), jnp.sin(angles)], axis=1)    # [D, 2]
+
+    # Precompute foot corners here too, capturing robot_description in closure
+    local_corners = compute_foot_local_corners(robot_description=robot_description)
 
     @Cost.create_factory
     def _com_support_polygon_cost_with_base_impl(
@@ -142,7 +140,6 @@ def com_support_polygon_cost_with_base(
         joint_var: Var[Array],
         T_world_base_var: Var[jaxlie.SE3],
         foot_link_indices: Array,
-        foot_dimensions: tuple[float, float],
         weight: Array | float,
         margin_threshold: float,
     ) -> Array:
@@ -167,16 +164,7 @@ def com_support_polygon_cost_with_base(
         foot_poses_wxyz_xyz = link_poses_world[foot_link_indices]    # Shape: [F, 7]
         foot_poses = jaxlie.SE3(foot_poses_wxyz_xyz)
 
-        # Define local foot corners
-        L, W = foot_dimensions
-        local_corners = jnp.array([
-            [L / 2, W / 2, 0],
-            [L / 2, -W / 2, 0],
-            [-L / 2, -W / 2, 0],
-            [-L / 2, W / 2, 0],
-        ])
-
-        # Transform corners to world
+        # Transform corners to world using precomputed local corners
         def transform_foot_corners(foot_pose):
             world_corners = jax.vmap(foot_pose.apply)(local_corners)
             return world_corners
@@ -212,13 +200,12 @@ def com_support_polygon_cost_with_base(
         residuals = jnp.maximum(0.0, margin_threshold - margins)
         return (residuals * weight).flatten()
 
-    # Return the cost created without passing directions as an argument
+    # Return the cost created without passing robot_description as an argument
     return _com_support_polygon_cost_with_base_impl(
         robot,
         joint_var,
         T_world_base_var,
         foot_link_indices,
-        foot_dimensions,
         weight,
         margin_threshold,
     )

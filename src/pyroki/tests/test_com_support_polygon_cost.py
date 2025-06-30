@@ -9,9 +9,14 @@ from robot_descriptions.loaders.yourdfpy import load_robot_description
 import time
 import numpy as np
 import argparse
+import pyroki.robots_config as robots_config
 
 
-def verify_com_in_polygon(robot, joint_config, foot_link_indices, foot_dimensions, base_pose=None):
+def verify_com_in_polygon(robot,
+                          joint_config,
+                          foot_link_indices,
+                          robot_description,
+                          base_pose=None):
     """Verify that the COM is inside the support polygon.
     
     Returns:
@@ -48,14 +53,8 @@ def verify_com_in_polygon(robot, joint_config, foot_link_indices, foot_dimension
         foot_poses_params = link_poses_params[foot_link_indices]
         foot_poses = jaxlie.SE3(foot_poses_params)
 
-    # Define local foot corners
-    L, W = foot_dimensions
-    local_corners = jnp.array([
-        [L / 2, W / 2, 0],
-        [L / 2, -W / 2, 0],
-        [-L / 2, -W / 2, 0],
-        [-L / 2, W / 2, 0],
-    ])
+    # Define local foot corners using configuration
+    local_corners = robots_config.compute_foot_local_corners(robot_description=robot_description)
 
     # Transform corners to world
     def transform_foot_corners(foot_pose):
@@ -87,11 +86,8 @@ def verify_com_in_polygon(robot, joint_config, foot_link_indices, foot_dimension
 
 
 def visualize_com_and_polygon(urdf_string,
-                              robot,
                               joint_config,
                               base_pose,
-                              foot_link_indices,
-                              foot_dimensions,
                               com_xy,
                               corners_xy,
                               test_name="COM Support Polygon"):
@@ -224,19 +220,21 @@ def visualize_com_and_polygon(urdf_string,
 
 def test_com_support_polygon_basic(visualize=False):
     """Test basic COM support polygon cost with G1 humanoid robot."""
+    # Define robot description
+    robot_description = "g1_description"
+
     # Load G1 humanoid robot
-    urdf_string = load_robot_description("g1_description")
+    urdf_string = load_robot_description(robot_description)
     robot = pk.Robot.from_urdf(urdf_string)
 
-    # Use actual foot links for the G1 humanoid
-    foot_link_names = ["left_ankle_roll_link", "right_ankle_roll_link"]
+    # Get foot links from robot configuration
+    foot_link_names = robots_config.get_foot_link_names(robot_description)
     foot_link_indices = jnp.array([robot.links.names.index(name) for name in foot_link_names])
 
     # Create joint variable
     joint_var = robot.joint_var_cls(0)
 
-    # Test parameters - more realistic for humanoid feet
-    foot_dimensions = (0.15, 0.08)    # 15cm x 8cm (typical humanoid foot size)
+    # Test parameters
     num_directions = 8
 
     # Create cost and use it in a minimal optimization problem
@@ -245,7 +243,7 @@ def test_com_support_polygon_basic(visualize=False):
             robot,
             joint_var,
             foot_link_indices,
-            foot_dimensions,
+            robot_description,
             num_directions,
             1.0,    # weight
             0.0,    # margin_threshold
@@ -267,7 +265,7 @@ def test_com_support_polygon_basic(visualize=False):
 
     # Verify COM is inside support polygon
     is_inside, com_xy, corners_xy = verify_com_in_polygon(robot, optimized_config,
-                                                          foot_link_indices, foot_dimensions)
+                                                          foot_link_indices, robot_description)
 
     assert is_inside, f"COM at {com_xy} is outside support polygon!"
 
@@ -286,11 +284,8 @@ def test_com_support_polygon_basic(visualize=False):
     # Visualize if requested
     if visualize:
         visualize_com_and_polygon(urdf_string,
-                                  robot,
                                   optimized_config,
                                   None,
-                                  foot_link_indices,
-                                  foot_dimensions,
                                   com_xy,
                                   corners_xy,
                                   test_name="Basic COM Support Polygon Test")
@@ -300,20 +295,22 @@ def test_com_support_polygon_basic(visualize=False):
 
 def test_com_support_polygon_with_base(visualize=False):
     """Test COM support polygon cost with mobile base for G1 humanoid."""
+    # Define robot description
+    robot_description = "g1_description"
+
     # Load G1 humanoid robot
-    urdf_string = load_robot_description("g1_description")
+    urdf_string = load_robot_description(robot_description)
     robot = pk.Robot.from_urdf(urdf_string)
 
-    # Use actual foot links for the G1 humanoid
-    foot_link_names = ["left_ankle_roll_link", "right_ankle_roll_link"]
+    # Get foot links from robot configuration
+    foot_link_names = robots_config.get_foot_link_names(robot_description)
     foot_link_indices = jnp.array([robot.links.names.index(name) for name in foot_link_names])
 
     # Create variables
     joint_var = robot.joint_var_cls(0)
     base_var = jaxls.SE3Var(0)
 
-    # Test parameters - more realistic for humanoid feet
-    foot_dimensions = (0.15, 0.08)    # 15cm x 8cm
+    # Test parameters
     num_directions = 16
 
     # Create cost and use it in a minimal optimization problem
@@ -323,7 +320,7 @@ def test_com_support_polygon_with_base(visualize=False):
             joint_var,
             base_var,
             foot_link_indices,
-            foot_dimensions,
+            robot_description,
             num_directions,
             2.0,    # weight
             0.05,    # margin_threshold
@@ -352,7 +349,7 @@ def test_com_support_polygon_with_base(visualize=False):
 
     # Verify COM is inside support polygon
     is_inside, com_xy, corners_xy = verify_com_in_polygon(robot, optimized_config,
-                                                          foot_link_indices, foot_dimensions,
+                                                          foot_link_indices, robot_description,
                                                           optimized_base)
 
     assert is_inside, f"COM at {com_xy} is outside support polygon!"
@@ -374,11 +371,8 @@ def test_com_support_polygon_with_base(visualize=False):
     # Visualize if requested
     if visualize:
         visualize_com_and_polygon(urdf_string,
-                                  robot,
                                   optimized_config,
                                   optimized_base,
-                                  foot_link_indices,
-                                  foot_dimensions,
                                   com_xy,
                                   corners_xy,
                                   test_name="COM Support Polygon with Mobile Base Test")
