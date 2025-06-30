@@ -28,6 +28,8 @@ def solve_trajopt_with_base(
     fix_base_orientation: Tuple[bool, bool, bool],
     timesteps: int,
     dt: float,
+    prev_pos: ArrayLike,    # Initial base position
+    prev_wxyz: ArrayLike,    # Initial base orientation
 ) -> Tuple[ArrayLike, ArrayLike, ArrayLike]:
     """
     Solve trajectory optimization for a mobile robot with multiple end-effectors.
@@ -44,6 +46,8 @@ def solve_trajopt_with_base(
         fix_base_orientation: Which base orientation DOFs to fix (roll, pitch, yaw)
         timesteps: Number of timesteps in trajectory
         dt: Time step size
+        prev_pos: Initial base position for IK solving
+        prev_wxyz: Initial base orientation for IK solving
         
     Returns:
         base_positions: Shape (timesteps, 3)
@@ -61,6 +65,9 @@ def solve_trajopt_with_base(
     foot_link_indices = [robot.links.names.index(name) for name in foot_link_names]
     hand_link_indices = [robot.links.names.index(name) for name in hand_link_names]
 
+    # Combine all link names for IK solving
+    all_link_names = foot_link_names + hand_link_names
+
     # Convert to JAX arrays
     foot_positions = jnp.array(foot_positions)
     foot_wxyzs = jnp.array(foot_wxyzs)
@@ -72,6 +79,7 @@ def solve_trajopt_with_base(
     # Solve IK for start and end configurations
     start_base_pose, start_cfg, end_base_pose, end_cfg = _solve_start_end_iks(
         robot=robot,
+        all_link_names=all_link_names,
         foot_link_indices=jnp.array(foot_link_indices),
         hand_link_indices=jnp.array(hand_link_indices),
         foot_positions=foot_positions,
@@ -81,6 +89,8 @@ def solve_trajopt_with_base(
         hand_end_positions=hand_end_positions,
         hand_end_wxyzs=hand_end_wxyzs,
         fix_base=jnp.array(fix_base_position + fix_base_orientation),
+        prev_pos=jnp.array(prev_pos),
+        prev_wxyz=jnp.array(prev_wxyz),
     )
 
     # Initialize trajectories by linear interpolation
@@ -130,9 +140,9 @@ def solve_trajopt_with_base(
     return base_positions, base_wxyzs, joint_cfgs
 
 
-@jdc.jit
 def _solve_start_end_iks(
     robot: pk.Robot,
+    all_link_names: Sequence[str],
     foot_link_indices: jax.Array,
     hand_link_indices: jax.Array,
     foot_positions: jax.Array,
@@ -142,74 +152,72 @@ def _solve_start_end_iks(
     hand_end_positions: jax.Array,
     hand_end_wxyzs: jax.Array,
     fix_base: jax.Array,
+    prev_pos: jax.Array,
+    prev_wxyz: jax.Array,
 ) -> Tuple[jaxlie.SE3, jax.Array, jaxlie.SE3, jax.Array]:
-    """Solve IK for start and end configurations."""
+    """Solve IK for start and end configurations separately."""
 
-    # Create variables
-    joint_var_0 = robot.joint_var_cls(0)
-    joint_var_1 = robot.joint_var_cls(1)
-
-    # Use standard SE3Var for now
-    base_var_0 = jaxls.SE3Var(0)
-    base_var_1 = jaxls.SE3Var(1)
-
-    factors = []
-
-    # Foot constraints (same for both start and end)
-    for i in range(len(foot_link_indices)):
-        foot_pose = jaxlie.SE3.from_rotation_and_translation(jaxlie.SO3(foot_wxyzs[i]),
-                                                             foot_positions[i])
-        # Start
-        factors.append(
-            pk.costs.pose_cost_with_base(robot, joint_var_0, base_var_0, foot_pose,
-                                         foot_link_indices[i], 500.0, 100.0))
-        # End
-        factors.append(
-            pk.costs.pose_cost_with_base(robot, joint_var_1, base_var_1, foot_pose,
-                                         foot_link_indices[i], 500.0, 100.0))
-
-    # Hand constraints
-    for i in range(len(hand_link_indices)):
-        # Start
-        hand_start_pose = jaxlie.SE3.from_rotation_and_translation(jaxlie.SO3(hand_start_wxyzs[i]),
-                                                                   hand_start_positions[i])
-        factors.append(
-            pk.costs.pose_cost_with_base(
-                robot,    # Unbatched robot for single timestep
-                robot.joint_var_cls(0),
-                jaxls.SE3Var(0),
-                hand_start_pose,
-                jnp.array(hand_link_indices[i]),
-                100.0,
-                20.0,
-            ))
-
-        # End
-        hand_end_pose = jaxlie.SE3.from_rotation_and_translation(jaxlie.SO3(hand_end_wxyzs[i]),
-                                                                 hand_end_positions[i])
-        factors.append(
-            pk.costs.pose_cost_with_base(
-                robot,    # Unbatched robot for single timestep
-                robot.joint_var_cls(1),
-                jaxls.SE3Var(1),
-                hand_end_pose,
-                jnp.array(hand_link_indices[i]),
-                100.0,
-                20.0,
-            ))
-
-    # Standard costs
-    factors.extend([
-        pk.costs.limit_cost(robot, joint_var_0, 100.0),
-        pk.costs.limit_cost(robot, joint_var_1, 100.0),
-        pk.costs.rest_cost(joint_var_0, joint_var_0.default_factory(), 0.01),
-        pk.costs.rest_cost(joint_var_1, joint_var_1.default_factory(), 0.01),
+    # Use differential weights - much higher for feet to keep them pinned
+    num_feet = len(foot_link_indices)
+    num_hands = len(hand_link_indices)
+    pos_weights = jnp.concatenate([
+        jnp.full(num_feet, 100.0),    # High weight for feet
+        jnp.full(num_hands, 50.0),    # Normal weight for hands
+    ])
+    ori_weights = jnp.concatenate([
+        jnp.full(num_feet, 20.0),    # High weight for feet
+        jnp.full(num_hands, 10.0),    # Normal weight for hands
     ])
 
-    sol = (jaxls.LeastSquaresProblem(
-        factors, [joint_var_0, joint_var_1, base_var_0, base_var_1]).analyze().solve(verbose=False))
+    # Extract base constraints
+    fix_base_position = fix_base[:3]
+    fix_base_orientation = fix_base[3:]
 
-    return sol[base_var_0], sol[joint_var_0], sol[base_var_1], sol[joint_var_1]
+    # Solve start IK
+    start_positions = jnp.concatenate([foot_positions, hand_start_positions], axis=0)
+    start_wxyzs = jnp.concatenate([foot_wxyzs, hand_start_wxyzs], axis=0)
+
+    from . import solve_ik_with_multiple_targets_and_base
+
+    start_base_pos, start_base_wxyz, start_cfg = solve_ik_with_multiple_targets_and_base(
+        robot=robot,
+        target_link_names=all_link_names,
+        target_positions=start_positions,
+        target_wxyzs=start_wxyzs,
+        fix_base_position=tuple(fix_base_position),
+        fix_base_orientation=tuple(fix_base_orientation),
+        prev_pos=prev_pos,
+        prev_wxyz=prev_wxyz,
+        prev_cfg=robot.joint_var_cls(0).default_factory(),
+        pos_weights=pos_weights,
+        ori_weights=ori_weights,
+    )
+
+    # Solve end IK using start solution as initial guess
+    end_positions = jnp.concatenate([foot_positions, hand_end_positions], axis=0)
+    end_wxyzs = jnp.concatenate([foot_wxyzs, hand_end_wxyzs], axis=0)
+
+    end_base_pos, end_base_wxyz, end_cfg = solve_ik_with_multiple_targets_and_base(
+        robot=robot,
+        target_link_names=all_link_names,
+        target_positions=end_positions,
+        target_wxyzs=end_wxyzs,
+        fix_base_position=tuple(fix_base_position),
+        fix_base_orientation=tuple(fix_base_orientation),
+        prev_pos=start_base_pos,
+        prev_wxyz=start_base_wxyz,
+        prev_cfg=start_cfg,
+        pos_weights=pos_weights,
+        ori_weights=ori_weights,
+    )
+
+    # Convert to SE3
+    start_base_pose = jaxlie.SE3.from_rotation_and_translation(jaxlie.SO3(start_base_wxyz),
+                                                               start_base_pos)
+    end_base_pose = jaxlie.SE3.from_rotation_and_translation(jaxlie.SO3(end_base_wxyz),
+                                                             end_base_pos)
+
+    return start_base_pose, start_cfg, end_base_pose, end_cfg
 
 
 @jdc.jit

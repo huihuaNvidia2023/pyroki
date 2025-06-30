@@ -28,8 +28,8 @@ def main():
     # Fixed foot positions (standing pose)
     torso_height = 0.75
     foot_positions = np.array([
-        [0.05, 0.1, 0.0],    # Left foot
-        [0.05, -0.1, 0.0],    # Right foot
+        [0.05, 0.1, 0.05],    # Left foot (matching ankle z-position from 13)
+        [0.05, -0.1, 0.05],    # Right foot (matching ankle z-position from 13)
     ])
     foot_wxyzs = np.array([[1.0, 0.0, 0.0, 0.0]] * 2)    # Both feet flat on ground
 
@@ -54,6 +54,9 @@ def main():
 
     # Solve trajectory optimization
     print("Solving trajectory optimization...")
+    initial_base_pos = np.array([0.0, 0.0, torso_height])  # Start at torso height
+    initial_base_wxyz = np.array([1.0, 0.0, 0.0, 0.0])  # Identity orientation
+    
     base_positions, base_wxyzs, joint_cfgs = pks.solve_trajopt_with_base(
         robot=robot,
         foot_link_names=foot_link_names,
@@ -68,6 +71,8 @@ def main():
         fix_base_orientation=fix_base_orientation,
         timesteps=timesteps,
         dt=dt,
+        prev_pos=initial_base_pos,
+        prev_wxyz=initial_base_wxyz,
     )
     print("Trajectory optimization complete!")
 
