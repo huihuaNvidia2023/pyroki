@@ -16,7 +16,8 @@ import pyroki_snippets as pks
 def main():
     """Main function for humanoid IK with mobile base."""
 
-    urdf = load_robot_description("g1_description")
+    robot_description = "g1_description"
+    urdf = load_robot_description(robot_description)
     all_target_link_names = [
         "left_ankle_roll_link", "right_ankle_roll_link", "left_palm_link", "right_palm_link"
     ]
@@ -30,6 +31,18 @@ def main():
     server.scene.add_grid("/ground", width=2, height=2)
     base_frame = server.scene.add_frame("/base", show_axes=False)
     urdf_vis = ViserUrdf(server, urdf, root_node_name="/base")
+
+    # Create support polygon visualizer
+    support_viz = pk.viewer.SupportPolygonVisualizer(server,
+                                                     robot,
+                                                     robot_description,
+                                                     root_node_name="/support_polygon",
+                                                     com_color=(255, 50, 50),
+                                                     polygon_color=(50, 255, 50),
+                                                     com_radius=0.03,
+                                                     show_com_line=True,
+                                                     com_line_height=1.0,
+                                                     visible=True)
 
     # Create interactive controller with initial position.
     torso_height = 0.75
@@ -73,6 +86,19 @@ def main():
         fix_roll = server.gui.add_checkbox("Fix Roll", False)
         fix_pitch = server.gui.add_checkbox("Fix Pitch", False)
         fix_yaw = server.gui.add_checkbox("Fix Yaw", False)
+
+    with server.gui.add_folder("COM Support Polygon"):
+        use_com_support = server.gui.add_checkbox("Enable COM Support Cost", False)
+        com_support_weight = server.gui.add_slider("Weight", min=0.1, max=10.0, step=0.1, initial_value=2.0)
+        com_support_margin = server.gui.add_slider("Margin (m)", min=0.0, max=0.1, step=0.01, initial_value=0.05)
+
+    with server.gui.add_folder("Visualization"):
+        show_support_polygon = server.gui.add_checkbox("Show Support Polygon", True)
+        show_support_polygon.on_update(
+            lambda _: support_viz.set_visibility(show_support_polygon.value))
+        com_status_text = server.gui.add_text("COM Status",
+                                              support_viz.get_status_text(),
+                                              disabled=True)
 
     def update_ankle_visibility():
         """Update visibility of ankle transform controls based on checkbox."""
@@ -155,6 +181,10 @@ def main():
                 prev_cfg=cfg,
                 pos_weights=pos_weights,
                 ori_weights=ori_weights,
+                use_com_support_cost=use_com_support.value,
+                com_support_weight=com_support_weight.value,
+                com_support_margin=com_support_margin.value,
+                robot_description=robot_description,
             )
 
         # Update timing handle.
@@ -165,6 +195,19 @@ def main():
         urdf_vis.update_cfg(cfg)
         base_frame.position = base_pos
         base_frame.wxyz = base_wxyz
+
+        # Update support polygon visualization
+        # Convert base pose to SE3 for the visualizer
+        import jaxlie
+        import jax.numpy as jnp
+        base_pose_SE3 = jaxlie.SE3.from_rotation_and_translation(
+            jaxlie.SO3.from_quaternion_xyzw(
+                jnp.array([base_wxyz[1], base_wxyz[2], base_wxyz[3], base_wxyz[0]])),
+            jnp.array(base_pos))
+        support_viz.update(jnp.array(cfg), base_pose_SE3)
+
+        # Update COM status text
+        com_status_text.value = support_viz.get_status_text()
 
 
 if __name__ == "__main__":
