@@ -126,6 +126,8 @@ class LinkInfo:
     num_links: jdc.Static[int]
     names: jdc.Static[tuple[str, ...]]
     parent_joint_indices: Int[Array, "n_links"]
+    masses: Float[Array, "n_links"]
+    """Mass of each link in kg. Shape: (n_links,). 0.0 if no inertial data."""
 
 
 class RobotURDFParser:
@@ -225,6 +227,7 @@ class RobotURDFParser:
         # Link information.
         link_name_list = list[str]()
         parent_joint_idx_list = list[int]()
+        link_mass_list = list[float]()
 
         # First pass: collect joint information.
         for joint_idx, joint in enumerate(urdf.joint_map.values()):
@@ -277,6 +280,19 @@ class RobotURDFParser:
                 parent_joint_idx_list.append(joint_idx)
             else:
                 parent_joint_idx_list.append(-1)
+            
+            # Extract mass information
+            link = urdf.link_map[link_name]
+            if hasattr(link, 'inertial') and link.inertial is not None:
+                # Link has inertial properties, extract mass
+                if hasattr(link.inertial, 'mass') and link.inertial.mass is not None:
+                    link_mass_list.append(float(link.inertial.mass))
+                else:
+                    # Inertial exists but no mass specified
+                    link_mass_list.append(0.0)
+            else:
+                # No inertial properties at all
+                link_mass_list.append(0.0)
 
         # Calculate topological sort order
         topo_sort_inv_val = RobotURDFParser._topologically_sort_joints(urdf)
@@ -332,8 +348,10 @@ class RobotURDFParser:
             num_links=len(link_name_list),
             names=tuple(link_name_list),
             parent_joint_indices=jnp.array(parent_joint_idx_list, dtype=jnp.int32),
+            masses=jnp.array(link_mass_list, dtype=jnp.float32),
         )
         assert link_info.parent_joint_indices.shape == (link_info.num_links,)
+        assert link_info.masses.shape == (link_info.num_links,)
         return joint_info, link_info
 
     @staticmethod
