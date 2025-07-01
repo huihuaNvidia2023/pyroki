@@ -16,8 +16,7 @@ import pyroki_snippets as pks
 def main():
     """Main function for humanoid IK with mobile base."""
 
-    robot_description = "g1_description"
-    urdf = load_robot_description(robot_description)
+    urdf = load_robot_description("g1_description")
     all_target_link_names = [
         "left_ankle_roll_link", "right_ankle_roll_link", "left_palm_link", "right_palm_link"
     ]
@@ -35,7 +34,6 @@ def main():
     # Create support polygon visualizer
     support_viz = pk.viewer.SupportPolygonVisualizer(server,
                                                      robot,
-                                                     robot_description,
                                                      root_node_name="/support_polygon",
                                                      com_color=(255, 50, 50),
                                                      polygon_color=(50, 255, 50),
@@ -75,9 +73,9 @@ def main():
 
     # Add GUI controls
     with server.gui.add_folder("IK Options"):
-        include_ankle_targets = server.gui.add_checkbox("Include Ankle Targets", False)
+        include_ankle_targets = server.gui.add_checkbox("Include Ankle Targets", True)
         include_ankle_targets.on_update(lambda _: update_ankle_visibility())
-        use_v2_solver = server.gui.add_checkbox("Use V2 Solver (Better foot pinning)", True)
+        use_v2_solver = server.gui.add_checkbox("Use V2 Solver (Better foot pinning)", False)
 
     with server.gui.add_folder("Base Constraints"):
         fix_x = server.gui.add_checkbox("Fix X", False)
@@ -88,9 +86,8 @@ def main():
         fix_yaw = server.gui.add_checkbox("Fix Yaw", False)
 
     with server.gui.add_folder("COM Support Polygon"):
-        use_com_support = server.gui.add_checkbox("Enable COM Support Cost", False)
-        com_support_weight = server.gui.add_slider("Weight", min=0.1, max=10.0, step=0.1, initial_value=2.0)
-        com_support_margin = server.gui.add_slider("Margin (m)", min=0.0, max=0.1, step=0.01, initial_value=0.05)
+        com_support_weight = server.gui.add_slider("Weight", min=0.0, max=1000.0, step=0.1, initial_value=0.0)
+        com_support_margin = server.gui.add_slider("Margin (m)", min=0.0, max=0.1, step=0.01, initial_value=0.00)
 
     with server.gui.add_folder("Visualization"):
         show_support_polygon = server.gui.add_checkbox("Show Support Polygon", True)
@@ -181,10 +178,8 @@ def main():
                 prev_cfg=cfg,
                 pos_weights=pos_weights,
                 ori_weights=ori_weights,
-                use_com_support_cost=use_com_support.value,
                 com_support_weight=com_support_weight.value,
                 com_support_margin=com_support_margin.value,
-                robot_description=robot_description,
             )
 
         # Update timing handle.

@@ -9,7 +9,7 @@ from typing import Tuple, Dict, Any
 
 # Robot foot dimensions (length, width) in meters
 ROBOT_FOOT_DIMENSIONS: Dict[str, Tuple[float, float]] = {
-    "g1_description": (0.2, 0.06),    # G1 humanoid: 15cm x 8cm feet
+    "g1": (0.2, 0.06),    # G1 humanoid: 15cm x 8cm feet
     "panda_description": (0.1, 0.1),    # Panda (for testing): 10cm x 10cm
     # Add more robots here as needed
 }
@@ -17,7 +17,7 @@ ROBOT_FOOT_DIMENSIONS: Dict[str, Tuple[float, float]] = {
 # Foot length offset ratio - shifts the support polygon forward/backward
 # Positive values shift the polygon forward (towards toes)
 FOOT_LENGTH_OFFSET_RATIO: Dict[str, float] = {
-    "g1_description": 0.175,    # No offset for G1
+    "g1": 0.175,    # No offset for G1
     "panda_description": 0.0,    # No offset for Panda
     # Add more robots here as needed
 }
@@ -27,7 +27,7 @@ def get_foot_dimensions(robot_description: str) -> Tuple[float, float]:
     """Get foot dimensions for a given robot.
     
     Args:
-        robot_description: Robot description name (e.g., "g1_description")
+        robot_description: Robot description name (e.g., "g1")
         
     Returns:
         Tuple of (length, width) in meters
@@ -42,7 +42,7 @@ def get_foot_length_offset_ratio(robot_description: str) -> float:
     """Get foot length offset ratio for a given robot.
     
     Args:
-        robot_description: Robot description name (e.g., "g1_description")
+        robot_description: Robot description name (e.g., "g1")
         
     Returns:
         Offset ratio (0.0 = centered, positive = forward shift)
@@ -60,7 +60,7 @@ def compute_foot_local_corners(foot_length: float = None,
     
     This function can be called in two ways:
     1. With explicit parameters: compute_foot_local_corners(foot_length, foot_width, length_offset_ratio)
-    2. With robot description: compute_foot_local_corners(robot_description="g1_description")
+    2. With robot description: compute_foot_local_corners(robot_description="g1")
     
     Args:
         foot_length: Length of the foot (along X-axis) in meters
@@ -101,13 +101,13 @@ def get_foot_link_names(robot_description: str) -> Tuple[str, str]:
     """Get foot link names for a given robot.
     
     Args:
-        robot_description: Robot description name (e.g., "g1_description")
+        robot_description: Robot description name (e.g., "g1")
         
     Returns:
         Tuple of (left_foot_link, right_foot_link) names
     """
     foot_link_names = {
-        "g1_description": ("left_ankle_roll_link", "right_ankle_roll_link"),
+        "g1": ("left_ankle_roll_link", "right_ankle_roll_link"),
     # Add more robots here as needed
     }
 

@@ -26,10 +26,8 @@ def solve_ik_with_multiple_targets_and_base(
     prev_cfg: onp.ndarray,
     pos_weights: onp.ndarray | None = None,
     ori_weights: onp.ndarray | None = None,
-    use_com_support_cost: bool = False,
-    com_support_weight: float = 1.0,
+    com_support_weight: float = 0.0,
     com_support_margin: float = 0.0,
-    robot_description: str | None = None,
 ) -> tuple[onp.ndarray, onp.ndarray, onp.ndarray]:
     """
     Solves the basic IK problem for a robot.
@@ -44,10 +42,8 @@ def solve_ik_with_multiple_targets_and_base(
         prev_pos, prev_wxyz, prev_cfg: Previous base position, orientation, and joint configuration, for smooth motion.
         pos_weights: onp.ndarray. Shape: (num_targets,). Position weights for each target. If None, uses default 50.0.
         ori_weights: onp.ndarray. Shape: (num_targets,). Orientation weights for each target. If None, uses default 10.0.
-        use_com_support_cost: Whether to use COM support polygon cost.
-        com_support_weight: Weight for the COM support polygon cost.
+        com_support_weight: Weight for the COM support polygon cost. Set to 0.0 to disable.
         com_support_margin: Margin threshold for COM support polygon.
-        robot_description: Robot description name for COM support polygon cost (e.g., "g1_description").
     Returns:
         base_pos: onp.ndarray. Shape: (3,).
         base_wxyz: onp.ndarray. Shape: (4,).
@@ -70,13 +66,9 @@ def solve_ik_with_multiple_targets_and_base(
     
     target_link_indices = [robot.links.names.index(name) for name in target_link_names]
     
-    # Get foot link indices if COM support cost is used
-    foot_link_indices = None
-    if use_com_support_cost:
-        if robot_description is None:
-            raise ValueError("robot_description must be provided when use_com_support_cost is True")
-        foot_link_names = robots_config.get_foot_link_names(robot_description)
-        foot_link_indices = jnp.array([robot.links.names.index(name) for name in foot_link_names])
+    # Get foot link indices for COM support cost
+    foot_link_names = robots_config.get_foot_link_names(robot.name)
+    foot_link_indices = jnp.array([robot.links.names.index(name) for name in foot_link_names])
 
     base_pose, cfg = _solve_ik_jax(
         robot,
@@ -89,10 +81,8 @@ def solve_ik_with_multiple_targets_and_base(
         jnp.array(prev_cfg),
         jnp.array(pos_weights),
         jnp.array(ori_weights),
-        use_com_support_cost,
         com_support_weight,
         com_support_margin,
-        robot_description,
         foot_link_indices,
     )
     assert cfg.shape == (robot.joints.num_actuated_joints,)
@@ -104,7 +94,7 @@ def solve_ik_with_multiple_targets_and_base(
     return onp.array(base_pos), onp.array(base_wxyz), onp.array(cfg)
 
 
-@jdc.jit
+@jax.jit
 def _solve_ik_jax(
     robot: pk.Robot,
     target_wxyz: jax.Array,
@@ -116,10 +106,8 @@ def _solve_ik_jax(
     prev_cfg: jnp.ndarray,
     pos_weights: jax.Array,
     ori_weights: jax.Array,
-    use_com_support_cost: bool,
     com_support_weight: float,
     com_support_margin: float,
-    robot_description: str | None,
     foot_link_indices: jax.Array | None,
 ) -> tuple[jaxlie.SE3, jax.Array]:
     JointVar = robot.joint_var_cls
@@ -176,20 +164,18 @@ def _solve_ik_jax(
         ),
     ]
     
-    # Add COM support polygon cost if enabled
-    if use_com_support_cost and foot_link_indices is not None:
-        factors.append(
-            pk.costs.com_support_polygon_cost_with_base(
-                robot,
-                joint_var,
-                base_var,
-                foot_link_indices,
-                robot_description,
-                num_directions=16,
-                weight=com_support_weight,
-                margin_threshold=com_support_margin,
-            )
+    # Add COM support polygon cost (weight controls whether it has any effect)
+    factors.append(
+        pk.costs.com_support_polygon_cost_with_base(
+            robot,
+            joint_var,
+            base_var,
+            foot_link_indices,
+            num_directions=8,
+            weight=com_support_weight,
+            margin_threshold=com_support_margin,
         )
+    )
     
     sol = (
         jaxls.LeastSquaresProblem(factors, [joint_var, base_var])

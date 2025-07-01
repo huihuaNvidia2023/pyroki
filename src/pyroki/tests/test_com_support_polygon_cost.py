@@ -12,11 +12,7 @@ import argparse
 import pyroki.robots_config as robots_config
 
 
-def verify_com_in_polygon(robot,
-                          joint_config,
-                          foot_link_indices,
-                          robot_description,
-                          base_pose=None):
+def verify_com_in_polygon(robot, joint_config, foot_link_indices, base_pose=None):
     """Verify that the COM is inside the support polygon.
     
     Returns:
@@ -54,7 +50,7 @@ def verify_com_in_polygon(robot,
         foot_poses = jaxlie.SE3(foot_poses_params)
 
     # Define local foot corners using configuration
-    local_corners = robots_config.compute_foot_local_corners(robot_description=robot_description)
+    local_corners = robots_config.compute_foot_local_corners(robot_description=robot.name)
 
     # Transform corners to world
     def transform_foot_corners(foot_pose):
@@ -87,15 +83,12 @@ def verify_com_in_polygon(robot,
 
 def test_com_support_polygon_basic(visualize=False):
     """Test basic COM support polygon cost with G1 humanoid robot."""
-    # Define robot description
-    robot_description = "g1_description"
-
     # Load G1 humanoid robot
-    urdf_string = load_robot_description(robot_description)
+    urdf_string = load_robot_description("g1_description")
     robot = pk.Robot.from_urdf(urdf_string)
 
     # Get foot links from robot configuration
-    foot_link_names = robots_config.get_foot_link_names(robot_description)
+    foot_link_names = robots_config.get_foot_link_names(robot.name)
     foot_link_indices = jnp.array([robot.links.names.index(name) for name in foot_link_names])
 
     # Create joint variable
@@ -110,7 +103,6 @@ def test_com_support_polygon_basic(visualize=False):
             robot,
             joint_var,
             foot_link_indices,
-            robot_description,
             num_directions,
             1.0,    # weight
             0.0,    # margin_threshold
@@ -148,7 +140,6 @@ def test_com_support_polygon_basic(visualize=False):
         support_viz = pk.viewer.SupportPolygonVisualizer(
             server,
             robot,
-            robot_description,
             root_node_name="/support_polygon_basic",
             com_color=(255, 50, 50),
             polygon_color=(50, 255, 50),
@@ -183,7 +174,6 @@ def test_com_support_polygon_basic(visualize=False):
     test_viz = pk.viewer.SupportPolygonVisualizer(
         None,    # No server needed for calculation only
         robot,
-        robot_description,
         visible=False)
     test_viz.update(optimized_config)
 
@@ -198,15 +188,12 @@ def test_com_support_polygon_basic(visualize=False):
 
 def test_com_support_polygon_with_base(visualize=False):
     """Test COM support polygon cost with mobile base for G1 humanoid."""
-    # Define robot description
-    robot_description = "g1_description"
-
     # Load G1 humanoid robot
-    urdf_string = load_robot_description(robot_description)
+    urdf_string = load_robot_description("g1_description")
     robot = pk.Robot.from_urdf(urdf_string)
 
     # Get foot links from robot configuration
-    foot_link_names = robots_config.get_foot_link_names(robot_description)
+    foot_link_names = robots_config.get_foot_link_names(robot.name)
     foot_link_indices = jnp.array([robot.links.names.index(name) for name in foot_link_names])
 
     # Create variables
@@ -223,7 +210,6 @@ def test_com_support_polygon_with_base(visualize=False):
             joint_var,
             base_var,
             foot_link_indices,
-            robot_description,
             num_directions,
             2.0,    # weight
             0.05,    # margin_threshold
@@ -273,7 +259,6 @@ def test_com_support_polygon_with_base(visualize=False):
         support_viz = pk.viewer.SupportPolygonVisualizer(
             server,
             robot,
-            robot_description,
             root_node_name="/support_polygon_mobile",
             com_color=(255, 100, 100),
             polygon_color=(100, 255, 100),
@@ -315,7 +300,6 @@ def test_com_support_polygon_with_base(visualize=False):
     test_viz = pk.viewer.SupportPolygonVisualizer(
         None,    # No server needed for calculation only
         robot,
-        robot_description,
         visible=False)
     test_viz.update(optimized_config, optimized_base)
 

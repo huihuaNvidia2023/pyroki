@@ -14,7 +14,6 @@ def com_support_polygon_cost(
     robot: Robot,
     joint_var: Var[Array],
     foot_link_indices: Array,
-    robot_description: str,
     num_directions: int,
     weight: Array | float,
     margin_threshold: float = 0.0,
@@ -30,8 +29,8 @@ def com_support_polygon_cost(
     angles = jnp.linspace(0, 2 * jnp.pi, num_directions, endpoint=False)
     precomputed_directions = jnp.stack([jnp.cos(angles), jnp.sin(angles)], axis=1)    # [D, 2]
 
-    # Precompute foot corners here too, capturing robot_description in closure
-    local_corners = compute_foot_local_corners(robot_description=robot_description)
+    # Precompute foot corners here too, using robot.name
+    local_corners = compute_foot_local_corners(robot_description=robot.name)
 
     @Cost.create_factory
     def _com_support_polygon_cost_impl(
@@ -99,7 +98,7 @@ def com_support_polygon_cost(
 
         return (residuals * weight).flatten()
 
-    # Return the cost created without passing robot_description as an argument
+    # Return the cost created
     return _com_support_polygon_cost_impl(
         robot,
         joint_var,
@@ -114,7 +113,6 @@ def com_support_polygon_cost_with_base(
     joint_var: Var[Array],
     T_world_base_var: Var[jaxlie.SE3],
     foot_link_indices: Array,
-    robot_description: str,
     num_directions: int,
     weight: Array | float,
     margin_threshold: float = 0.0,
@@ -130,8 +128,8 @@ def com_support_polygon_cost_with_base(
     angles = jnp.linspace(0, 2 * jnp.pi, num_directions, endpoint=False)
     precomputed_directions = jnp.stack([jnp.cos(angles), jnp.sin(angles)], axis=1)    # [D, 2]
 
-    # Precompute foot corners here too, capturing robot_description in closure
-    local_corners = compute_foot_local_corners(robot_description=robot_description)
+    # Precompute foot corners here too, using robot.name
+    local_corners = compute_foot_local_corners(robot_description=robot.name)
 
     @Cost.create_factory
     def _com_support_polygon_cost_with_base_impl(
@@ -200,7 +198,7 @@ def com_support_polygon_cost_with_base(
         residuals = jnp.maximum(0.0, margin_threshold - margins)
         return (residuals * weight).flatten()
 
-    # Return the cost created without passing robot_description as an argument
+    # Return the cost created
     return _com_support_polygon_cost_with_base_impl(
         robot,
         joint_var,

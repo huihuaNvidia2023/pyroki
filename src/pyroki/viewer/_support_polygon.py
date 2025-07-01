@@ -21,7 +21,6 @@ class SupportPolygonVisualizer:
         self,
         server: Optional[Union[viser.ViserServer, viser.ClientHandle]],
         robot: Robot,
-        robot_description: str,
         root_node_name: str = "/support_polygon",
         com_color: Tuple[int, int, int] = (255, 0, 0),
         polygon_color: Tuple[int, int, int] = (0, 255, 0),
@@ -37,7 +36,6 @@ class SupportPolygonVisualizer:
         Args:
             server: The Viser server or client handle. Can be None for calculation-only usage.
             robot: The Pyroki robot model.
-            robot_description: The robot description name (e.g., "g1_description").
             root_node_name: The base name for visualization elements in the Viser scene.
             com_color: The color of the COM projection.
             polygon_color: The color of the support polygon.
@@ -50,7 +48,6 @@ class SupportPolygonVisualizer:
         """
         self._server = server
         self._robot = robot
-        self._robot_description = robot_description
         self._root_node_name = root_node_name
         self._com_color = com_color
         self._polygon_color = polygon_color
@@ -62,12 +59,12 @@ class SupportPolygonVisualizer:
         self._com_line_height = com_line_height
 
         # Get foot link information
-        self._foot_link_names = get_foot_link_names(robot_description)
+        self._foot_link_names = get_foot_link_names(robot.name)
         self._foot_link_indices = jnp.array(
             [robot.links.names.index(name) for name in self._foot_link_names])
 
         # Precompute local foot corners
-        self._local_corners = compute_foot_local_corners(robot_description=robot_description)
+        self._local_corners = compute_foot_local_corners(robot_description=robot.name)
 
         # Visualization handles
         self._com_handle: Optional[viser.SceneNodeHandle] = None

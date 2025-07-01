@@ -17,6 +17,9 @@ from ._robot_urdf_parser import JointInfo, LinkInfo, RobotURDFParser
 class Robot:
     """A differentiable robot kinematics tree."""
 
+    name: jdc.Static[str]
+    """Robot description for the robot."""
+
     joints: JointInfo
     """Joint information for the robot."""
 
@@ -55,6 +58,7 @@ class Robot:
         ): ...
 
         robot = Robot(
+            name=urdf.robot.name,
             joints=joints,
             links=links,
             joint_var_cls=JointVar,
