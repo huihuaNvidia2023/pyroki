@@ -6,6 +6,8 @@ The robot keeps its feet planted while moving hands from start to end positions.
 
 import time
 import numpy as np
+import jax.numpy as jnp
+import jaxlie
 import pyroki as pk
 import viser
 from viser.extras import ViserUrdf
@@ -56,6 +58,8 @@ def main():
     print("Solving trajectory optimization...")
     initial_base_pos = np.array([0.0, 0.0, torso_height])  # Start at torso height
     initial_base_wxyz = np.array([1.0, 0.0, 0.0, 0.0])  # Identity orientation
+    com_support_weight = 500.0
+    com_support_margin = 0.0
     
     base_positions, base_wxyzs, joint_cfgs = pks.solve_trajopt_with_base(
         robot=robot,
@@ -73,6 +77,8 @@ def main():
         dt=dt,
         prev_pos=initial_base_pos,
         prev_wxyz=initial_base_wxyz,
+        com_support_weight=com_support_weight,
+        com_support_margin=com_support_margin,
     )
     print("Trajectory optimization complete!")
 
@@ -83,6 +89,17 @@ def main():
     # Add base frame for robot
     base_frame = server.scene.add_frame("/base", show_axes=False)
     urdf_vis = ViserUrdf(server, urdf, root_node_name="/base")
+
+    # Create support polygon visualizer
+    support_viz = pk.viewer.SupportPolygonVisualizer(server,
+                                                     robot,
+                                                     root_node_name="/support_polygon",
+                                                     com_color=(255, 50, 50),
+                                                     polygon_color=(50, 255, 50),
+                                                     com_radius=0.03,
+                                                     show_com_line=True,
+                                                     com_line_height=1.0,
+                                                     visible=True)
 
     # Visualize start and end hand positions
     for i, (name, color) in enumerate(zip(["left", "right"], [(255, 0, 0), (0, 0, 255)])):
@@ -144,6 +161,15 @@ def main():
         base_y_text = server.gui.add_number("Base Y", 0.0, disabled=True)
         base_yaw_text = server.gui.add_number("Base Yaw", 0.0, disabled=True)
 
+    # Add visualization controls
+    with server.gui.add_folder("Visualization"):
+        show_support_polygon = server.gui.add_checkbox("Show Support Polygon", True)
+        show_support_polygon.on_update(
+            lambda _: support_viz.set_visibility(show_support_polygon.value))
+        com_status_text = server.gui.add_text("COM Status",
+                                              support_viz.get_status_text(),
+                                              disabled=True)
+
     # Main visualization loop
     last_time = time.time()
     while True:
@@ -172,6 +198,17 @@ def main():
         w, x, y, z = base_wxyzs[t]
         base_yaw = np.arctan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
         base_yaw_text.value = float(np.degrees(base_yaw))
+
+        # Update support polygon visualization
+        # Convert base pose to SE3 for the visualizer
+        base_pose_SE3 = jaxlie.SE3.from_rotation_and_translation(
+            jaxlie.SO3.from_quaternion_xyzw(
+                jnp.array([base_wxyzs[t][1], base_wxyzs[t][2], base_wxyzs[t][3], base_wxyzs[t][0]])),
+            jnp.array(base_positions[t]))
+        support_viz.update(jnp.array(joint_cfgs[t]), base_pose_SE3)
+
+        # Update COM status text
+        com_status_text.value = support_viz.get_status_text()
 
         time.sleep(0.01)    # Small sleep to prevent CPU spinning
 

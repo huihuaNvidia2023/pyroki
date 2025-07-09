@@ -11,6 +11,7 @@ import jaxlie
 import jaxls
 import numpy as onp
 import pyroki as pk
+import pyroki.robots_config as robots_config
 from jax.typing import ArrayLike
 
 
@@ -30,6 +31,8 @@ def solve_trajopt_with_base(
         dt: float,
         prev_pos: ArrayLike,    # Initial base position
         prev_wxyz: ArrayLike,    # Initial base orientation
+        com_support_weight: float = 0.0,
+        com_support_margin: float = 0.0,
 ) -> Tuple[ArrayLike, ArrayLike, ArrayLike]:
     """
     Solve trajectory optimization for a mobile robot with multiple end-effectors.
@@ -91,6 +94,8 @@ def solve_trajopt_with_base(
         fix_base=jnp.array(fix_base_position + fix_base_orientation),
         prev_pos=jnp.array(prev_pos),
         prev_wxyz=jnp.array(prev_wxyz),
+        com_support_weight=com_support_weight,
+        com_support_margin=com_support_margin,
     )
 
     # Initialize trajectories by linear interpolation
@@ -130,6 +135,8 @@ def solve_trajopt_with_base(
         fix_base=jnp.array(fix_base_position + fix_base_orientation),
         timesteps=timesteps,
         dt=dt,
+        com_support_weight=com_support_weight,
+        com_support_margin=com_support_margin,
     )
 
     # Extract results
@@ -154,6 +161,8 @@ def _solve_start_end_iks(
     fix_base: jax.Array,
     prev_pos: jax.Array,
     prev_wxyz: jax.Array,
+    com_support_weight: float = 0.0,
+    com_support_margin: float = 0.0,
 ) -> Tuple[jaxlie.SE3, jax.Array, jaxlie.SE3, jax.Array]:
     """Solve IK for start and end configurations separately."""
 
@@ -211,6 +220,8 @@ def _solve_start_end_iks(
         prev_cfg=robot.joint_var_cls(0).default_factory(),
         pos_weights=pos_weights,
         ori_weights=ori_weights,
+        com_support_weight=com_support_weight,
+        com_support_margin=com_support_margin,
     )
 
     # Solve end IK using start solution as initial guess
@@ -229,6 +240,8 @@ def _solve_start_end_iks(
         prev_cfg=start_cfg,
         pos_weights=pos_weights,
         ori_weights=ori_weights,
+        com_support_weight=com_support_weight,
+        com_support_margin=com_support_margin,
     )
 
     # Convert to SE3
@@ -256,6 +269,8 @@ def _optimize_trajectory(
     fix_base: jax.Array,
     timesteps: jdc.Static[int],
     dt: jdc.Static[float],
+    com_support_weight: float = 0.0,
+    com_support_margin: float = 0.0,
 ) -> Tuple[jaxlie.SE3, jax.Array]:
     """Optimize the full trajectory."""
 
@@ -343,6 +358,23 @@ def _optimize_trajectory(
         base_smoothness_cost(
             jaxls.SE3Var(jnp.arange(0, timesteps - 1)),
             jaxls.SE3Var(jnp.arange(1, timesteps)),
+        ))
+
+    # Add COM support polygon cost (weight controls whether it has any effect)
+    # Get foot link indices for COM support
+    foot_link_names_for_com = robots_config.get_foot_link_names(robot.name)
+    foot_link_indices_for_com = jnp.array([robot.links.names.index(name) for name in foot_link_names_for_com])
+    
+    # Add COM support cost for all timesteps (batched)
+    factors.append(
+        pk.costs.com_support_polygon_cost_with_base(
+            robot_batched,
+            joint_vars,
+            base_vars,
+            jnp.broadcast_to(foot_link_indices_for_com[None, :], (timesteps,) + foot_link_indices_for_com.shape),  # Broadcast to all timesteps
+            num_directions=8,
+            weight=com_support_weight,
+            margin_threshold=com_support_margin,
         ))
 
     # Solve
