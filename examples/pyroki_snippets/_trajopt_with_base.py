@@ -33,6 +33,8 @@ def solve_trajopt_with_base(
         prev_wxyz: ArrayLike,    # Initial base orientation
         com_support_weight: float = 0.0,
         com_support_margin: float = 0.0,
+        rest_joint_pose: ArrayLike = None,
+        rest_base_pose: Tuple[ArrayLike, ArrayLike] = None,    # (position, wxyz)
 ) -> Tuple[ArrayLike, ArrayLike, ArrayLike]:
     """
     Solve trajectory optimization for a mobile robot with multiple end-effectors.
@@ -51,6 +53,10 @@ def solve_trajopt_with_base(
         dt: Time step size
         prev_pos: Initial base position for IK solving
         prev_wxyz: Initial base orientation for IK solving
+        com_support_weight: Weight for COM support polygon cost
+        com_support_margin: Margin for COM support polygon
+        rest_joint_pose: Custom rest pose for joints. If None, uses mid-point of joint limits
+        rest_base_pose: Custom rest pose for base as (position, wxyz). If None, uses identity
         
     Returns:
         base_positions: Shape (timesteps, 3)
@@ -96,6 +102,8 @@ def solve_trajopt_with_base(
         prev_wxyz=jnp.array(prev_wxyz),
         com_support_weight=com_support_weight,
         com_support_margin=com_support_margin,
+        rest_joint_pose=jnp.array(rest_joint_pose) if rest_joint_pose is not None else None,
+        rest_base_pose=rest_base_pose,
     )
 
     # Initialize trajectories by linear interpolation
@@ -137,6 +145,8 @@ def solve_trajopt_with_base(
         dt=dt,
         com_support_weight=com_support_weight,
         com_support_margin=com_support_margin,
+        rest_joint_pose=jnp.array(rest_joint_pose) if rest_joint_pose is not None else None,
+        rest_base_pose=rest_base_pose,
     )
 
     # Extract results
@@ -163,6 +173,8 @@ def _solve_start_end_iks(
     prev_wxyz: jax.Array,
     com_support_weight: float = 0.0,
     com_support_margin: float = 0.0,
+    rest_joint_pose: jax.Array = None,
+    rest_base_pose: Tuple[jax.Array, jax.Array] = None,
 ) -> Tuple[jaxlie.SE3, jax.Array, jaxlie.SE3, jax.Array]:
     """Solve IK for start and end configurations separately."""
 
@@ -222,6 +234,8 @@ def _solve_start_end_iks(
         ori_weights=ori_weights,
         com_support_weight=com_support_weight,
         com_support_margin=com_support_margin,
+        rest_joint_pose=rest_joint_pose,
+        rest_base_pose=rest_base_pose,
     )
 
     # Solve end IK using start solution as initial guess
@@ -242,6 +256,8 @@ def _solve_start_end_iks(
         ori_weights=ori_weights,
         com_support_weight=com_support_weight,
         com_support_margin=com_support_margin,
+        rest_joint_pose=rest_joint_pose,
+        rest_base_pose=rest_base_pose,
     )
 
     # Convert to SE3
@@ -271,6 +287,8 @@ def _optimize_trajectory(
     dt: jdc.Static[float],
     com_support_weight: float = 0.0,
     com_support_margin: float = 0.0,
+    rest_joint_pose: jax.Array = None,
+    rest_base_pose: Tuple[jax.Array, jax.Array] = None,
 ) -> Tuple[jaxlie.SE3, jax.Array]:
     """Optimize the full trajectory."""
 
@@ -337,14 +355,53 @@ def _optimize_trajectory(
             robot.joint_var_cls(jnp.arange(0, timesteps - 1)),
             jnp.array([0.1])[None],
         ),
-        pk.costs.rest_cost(
-            joint_vars,
-            joint_vars.default_factory()[None],
-            jnp.array([0.01])[None],
-        ),
-        pk.costs.limit_cost(robot_batched, joint_vars,
-                            jnp.array([100.0])[None]),
     ])
+
+    # Add rest cost - use custom version if rest poses are provided
+    if rest_joint_pose is not None or rest_base_pose is not None:
+        # Use custom rest cost with specified poses
+        actual_rest_joint_pose = rest_joint_pose if rest_joint_pose is not None else jnp.array(
+            joint_vars.default_factory()[0])
+
+        # Convert rest_base_pose to SE3 if provided
+        if rest_base_pose is not None:
+            rest_base_SE3 = jaxlie.SE3.from_rotation_and_translation(
+                jaxlie.SO3(jnp.array(rest_base_pose[1])),    # wxyz
+                jnp.array(rest_base_pose[0])    # position
+            )
+        else:
+            rest_base_SE3 = jaxlie.SE3.identity()
+
+        # Apply rest cost to each timestep
+        # Note: We need to broadcast the rest poses to match the batch dimension
+        rest_base_SE3_batched = jax.tree.map(lambda x: jnp.repeat(x[None], timesteps, axis=0),
+                                             rest_base_SE3)
+
+        factors.append(
+            pk.costs.rest_with_base_cost_custom(
+                joint_vars,
+                base_vars,
+                jnp.broadcast_to(
+                    actual_rest_joint_pose[None],
+                    (timesteps, len(actual_rest_joint_pose))),    # Broadcast to all timesteps
+                rest_base_SE3_batched,    # Pass SE3 object, not wxyz_xyz
+                jnp.broadcast_to(
+                    jnp.array([0.01] * robot.joints.num_actuated_joints + [0.1] * 3 +
+                              [0.001] * 3)[None],
+                    (timesteps, robot.joints.num_actuated_joints + 6)),    # Broadcast weights
+            ))
+    else:
+        # Use default rest cost (current behavior)
+        factors.extend([
+            pk.costs.rest_cost(
+                joint_vars,
+                joint_vars.default_factory()[None],
+                jnp.array([0.01])[None],
+            ),
+        ])
+
+    # Add limit cost
+    factors.append(pk.costs.limit_cost(robot_batched, joint_vars, jnp.array([100.0])[None]))
 
     # Base smoothness
     @jaxls.Cost.create_factory(name="BaseSmoothnessCost")
@@ -363,15 +420,17 @@ def _optimize_trajectory(
     # Add COM support polygon cost (weight controls whether it has any effect)
     # Get foot link indices for COM support
     foot_link_names_for_com = robots_config.get_foot_link_names(robot.name)
-    foot_link_indices_for_com = jnp.array([robot.links.names.index(name) for name in foot_link_names_for_com])
-    
+    foot_link_indices_for_com = jnp.array(
+        [robot.links.names.index(name) for name in foot_link_names_for_com])
+
     # Add COM support cost for all timesteps (batched)
     factors.append(
         pk.costs.com_support_polygon_cost_with_base(
             robot_batched,
             joint_vars,
             base_vars,
-            jnp.broadcast_to(foot_link_indices_for_com[None, :], (timesteps,) + foot_link_indices_for_com.shape),  # Broadcast to all timesteps
+            jnp.broadcast_to(foot_link_indices_for_com[None, :], (timesteps,) +
+                             foot_link_indices_for_com.shape),    # Broadcast to all timesteps
             num_directions=8,
             weight=com_support_weight,
             margin_threshold=com_support_margin,
