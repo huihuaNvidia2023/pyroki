@@ -153,4 +153,30 @@ for frame in episode.frames:
 1. **Contact Detection**: Adjust `contact_threshold` based on your robot and environment
 2. **Performance**: Disable velocity/acceleration recording if not needed to improve performance
 3. **Storage**: Parquet files are compressed; typical episodes are 10-100KB
-4. **Custom Data**: Use `custom_metadata` to track experiment parameters, user notes, etc. 
+4. **Custom Data**: Use `custom_metadata` to track experiment parameters, user notes, etc.
+
+## Playback Viewer
+
+PyRoKi includes an interactive playback viewer for visualizing logged episodes:
+
+```python
+import pyroki as pk
+
+# Play back a single episode
+player = pk.viewer.EpisodePlayback("logs/2024-01-01/robot_episode_001.parquet")
+player.run()
+
+# Play back all episodes in a directory
+player = pk.viewer.EpisodePlayback("logs/2024-01-01/")
+player.run()
+```
+
+Features:
+- Automatic robot loading from episode metadata
+- Episode navigation with Previous/Next buttons
+- Frame-by-frame playback with adjustable speed
+- Support polygon and COM visualization
+- Contact status display
+- Custom metadata viewing
+
+See `examples/17_episode_playback_demo.py` for more details. 

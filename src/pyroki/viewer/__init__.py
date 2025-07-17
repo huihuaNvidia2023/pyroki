@@ -2,3 +2,4 @@
 from ._weight_tuner import WeightTuner as WeightTuner
 from ._manipulability_ellipse import ManipulabilityEllipse as ManipulabilityEllipse
 from ._support_polygon import SupportPolygonVisualizer as SupportPolygonVisualizer
+from ._episode_playback import EpisodePlayback as EpisodePlayback
