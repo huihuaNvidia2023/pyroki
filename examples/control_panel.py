@@ -57,6 +57,7 @@ class ControlPanel:
         with server.gui.add_folder("Visualization"):
             self.show_support = server.gui.add_checkbox("Show Support Polygon", True)
             self.show_markers = server.gui.add_checkbox("Show Pose Markers", True)
+            self.show_labels = server.gui.add_checkbox("Show Marker Labels", True)
             self.com_status_text = server.gui.add_text("COM Status", "N/A", disabled=True)
             
         # Update duration when timesteps or dt changes

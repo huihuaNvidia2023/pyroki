@@ -45,6 +45,9 @@ class VisualizationManager:
         # Pose markers for start/end visualization
         self.pose_markers: Dict[str, viser.SceneNodeHandle] = {}
         
+        # Track label visibility
+        self.labels_visible = True
+        
     def show_pose_markers(self, start_positions: Dict[str, np.ndarray],
                          start_wxyzs: Dict[str, np.ndarray],
                          end_positions: Dict[str, np.ndarray] = None,
@@ -73,6 +76,7 @@ class VisualizationManager:
                 text=f"Start: {link_name.replace('_', ' ').title()}",
                 position=(0, 0, 0.05)
             )
+            label.visible = self.labels_visible
             self.pose_markers[f"start_{link_name}_label"] = label
             
         # Show end pose markers if provided
@@ -96,6 +100,7 @@ class VisualizationManager:
                     text=f"End: {link_name.replace('_', ' ').title()}",
                     position=(0, 0, 0.05)
                 )
+                label.visible = self.labels_visible
                 self.pose_markers[f"end_{link_name}_label"] = label
                 
     def _clear_pose_markers(self) -> None:
@@ -130,6 +135,23 @@ class VisualizationManager:
     def get_com_status(self) -> str:
         """Get current COM status text."""
         return self.support_viz.get_status_text()
+        
+    def set_labels_visible(self, visible: bool) -> None:
+        """Set visibility of all label markers.
+        
+        Args:
+            visible: Whether labels should be visible
+        """
+        self.labels_visible = visible
+        
+        # Update visibility of existing labels
+        for key, marker in self.pose_markers.items():
+            if key.endswith('_label'):
+                marker.visible = visible
+                
+    def toggle_labels(self) -> None:
+        """Toggle visibility of all label markers."""
+        self.set_labels_visible(not self.labels_visible)
         
     def set_support_polygon_visible(self, visible: bool) -> None:
         """Show or hide support polygon visualization."""

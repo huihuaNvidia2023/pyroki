@@ -54,6 +54,14 @@ class TrajectoryController:
                 self.control_panel.show_support.value
             )
         )
+        self.control_panel.show_labels.on_update(
+            lambda _: self.viz_manager.set_labels_visible(
+                self.control_panel.show_labels.value
+            )
+        )
+        self.control_panel.show_markers.on_update(
+            lambda _: self._update_marker_visibility()
+        )
         
         # Initialize robot pose
         self.initial_base_pos = np.array([0.0, 0.0, 0.75])
@@ -100,8 +108,9 @@ class TrajectoryController:
         # Update UI
         self.control_panel.update_ui_state(self.state.current_state)
         
-        # Show captured poses
-        self.viz_manager.show_pose_markers(positions, wxyzs)
+        # Show captured poses if checkbox is enabled
+        if self.control_panel.show_markers.value:
+            self.viz_manager.show_pose_markers(positions, wxyzs)
         
         print("Start pose captured!")
         
@@ -113,13 +122,14 @@ class TrajectoryController:
         # Update UI
         self.control_panel.update_ui_state(self.state.current_state)
         
-        # Show both start and end poses
-        self.viz_manager.show_pose_markers(
-            self.state.start_positions,
-            self.state.start_wxyzs,
-            positions,
-            wxyzs
-        )
+        # Show both start and end poses if checkbox is enabled
+        if self.control_panel.show_markers.value:
+            self.viz_manager.show_pose_markers(
+                self.state.start_positions,
+                self.state.start_wxyzs,
+                positions,
+                wxyzs
+            )
         
         print("End pose captured!")
         
@@ -254,6 +264,23 @@ class TrajectoryController:
             
         return last_time
         
+    def _update_marker_visibility(self) -> None:
+        """Update marker visibility based on checkbox state."""
+        show_markers = self.control_panel.show_markers.value
+        
+        if not show_markers:
+            # Hide all markers
+            self.viz_manager._clear_pose_markers()
+        else:
+            # Show markers if we have pose data
+            if self.state.start_positions:
+                self.viz_manager.show_pose_markers(
+                    self.state.start_positions,
+                    self.state.start_wxyzs,
+                    self.state.end_positions if hasattr(self.state, 'end_positions') and self.state.end_positions else None,
+                    self.state.end_wxyzs if hasattr(self.state, 'end_wxyzs') and self.state.end_wxyzs else None
+                )
+    
     def update_visualization(self) -> None:
         """Update robot visualization based on current timestep."""
         if self.state.current_state != TrajectoryStates.PLAYBACK:
@@ -269,17 +296,4 @@ class TrajectoryController:
         )
         
         # Update COM status
-        self.control_panel.com_status_text.value = self.viz_manager.get_com_status()
-        
-        # Hide markers during playback if requested
-        show_markers = self.control_panel.show_markers.value
-        if not show_markers and len(self.viz_manager.pose_markers) > 0:
-            self.viz_manager._clear_pose_markers()
-        elif show_markers and len(self.viz_manager.pose_markers) == 0:
-            # Re-show markers
-            self.viz_manager.show_pose_markers(
-                self.state.start_positions,
-                self.state.start_wxyzs,
-                self.state.end_positions,
-                self.state.end_wxyzs
-            ) 
+        self.control_panel.com_status_text.value = self.viz_manager.get_com_status() 
