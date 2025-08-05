@@ -221,8 +221,32 @@ class EpisodePlayback:
         """Setup robot and visualizers."""
         print(f"Loading robot: {robot_name}")
 
-        # Load URDF
-        self.urdf = load_robot_description(f"{robot_name}_description")
+        # Check if current episode has URDF path in metadata
+        episode = self.episodes[self.current_episode_idx]
+        urdf_path = episode.metadata.custom_metadata.get('urdf_path')
+        
+        if urdf_path:
+            # Load URDF from file
+            from pathlib import Path
+            import yourdfpy
+            
+            urdf_path = Path(urdf_path)
+            if not urdf_path.exists():
+                print(f"Warning: URDF file not found at {urdf_path}, falling back to robot_descriptions")
+                self.urdf = load_robot_description(f"{robot_name}_description")
+            else:
+                print(f"Loading URDF from file: {urdf_path}")
+                
+                # Define filename handler for resolving mesh paths
+                def filename_handler(fname: str) -> str:
+                    base_path = urdf_path.parent
+                    return yourdfpy.filename_handler_magic(fname, dir=base_path)
+                
+                self.urdf = yourdfpy.URDF.load(str(urdf_path), filename_handler=filename_handler)
+        else:
+            # Load from robot_descriptions
+            self.urdf = load_robot_description(f"{robot_name}_description")
+        
         self.robot = Robot.from_urdf(self.urdf)
 
         # Create base frame

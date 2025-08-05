@@ -48,6 +48,7 @@ class DataLogger:
         contact_threshold: float = 0.05,
         record_velocities: bool = True,
         record_accelerations: bool = True,
+        urdf_path: Optional[Union[str, Path]] = None,
     ):
         """Initialize the data logger.
         
@@ -58,6 +59,7 @@ class DataLogger:
             contact_threshold: Height threshold for contact detection
             record_velocities: Whether to record velocities
             record_accelerations: Whether to record accelerations
+            urdf_path: Optional path to URDF file (for custom URDFs)
         """
         self.robot = robot
         self.output_dir = Path(output_dir)
@@ -67,6 +69,7 @@ class DataLogger:
         self.contact_threshold = contact_threshold
         self.record_velocities = record_velocities
         self.record_accelerations = record_accelerations
+        self.urdf_path = str(urdf_path) if urdf_path else None
 
         # Current episode data
         self.current_episode: Optional[EpisodeData] = None
@@ -118,6 +121,10 @@ class DataLogger:
                                        'record_accelerations': self.record_accelerations,
                                        'contact_threshold': self.contact_threshold,
                                    })
+
+        # Add URDF path if provided
+        if self.urdf_path:
+            metadata.add_custom_field('urdf_path', self.urdf_path)
 
         # Add custom metadata if provided
         if custom_metadata:

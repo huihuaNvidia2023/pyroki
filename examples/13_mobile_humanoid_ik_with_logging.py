@@ -19,7 +19,7 @@ import pyroki_snippets as pks
 
 def main():
     """Main function for humanoid IK with mobile base and data logging."""
-    
+
     # Parse command line arguments
     parser = argparse.ArgumentParser(description="Mobile Humanoid IK with Data Logging")
     parser.add_argument(
@@ -27,17 +27,14 @@ def main():
         "-r",
         type=str,
         help="Robot name for loading from robot_descriptions (e.g., 'g1', 'panda', 'ur5')",
-        default="g1"
-    )
-    parser.add_argument(
-        "--urdf",
-        "-u",
-        type=str,
-        help="Path to URDF file (overrides robot-name if provided)",
-        default=""
-    )
+        default="g1")
+    parser.add_argument("--urdf",
+                        "-u",
+                        type=str,
+                        help="Path to URDF file (overrides robot-name if provided)",
+                        default="")
     args = parser.parse_args()
-    
+
     # TODO: Factor out this part into a function.
     # Load URDF either from file or using robot_descriptions
     if args.urdf:
@@ -46,24 +43,24 @@ def main():
         if not urdf_path.is_absolute():
             # Make relative paths relative to the workspace root
             urdf_path = Path.cwd() / urdf_path
-        
+
         if not urdf_path.exists():
             raise FileNotFoundError(f"URDF file not found: {urdf_path}")
-        
+
         print(f"Loading URDF from file: {urdf_path}")
-        
+
         # Define filename handler for resolving mesh paths
         def filename_handler(fname: str) -> str:
             # Handle mesh paths relative to URDF file location
             base_path = urdf_path.parent
             return yourdfpy.filename_handler_magic(fname, dir=base_path)
-        
+
         urdf = yourdfpy.URDF.load(str(urdf_path), filename_handler=filename_handler)
         urdf.robot.name = args.robot_name
 
         all_target_link_names = [
-            "left_ankle_roll_link", "right_ankle_roll_link", "left_wrist_yaw_link", "right_wrist_yaw_link",
-            "pelvis"
+            "left_ankle_roll_link", "right_ankle_roll_link", "left_wrist_yaw_link",
+            "right_wrist_yaw_link", "pelvis"
         ]
     else:
         # Load from robot_descriptions using robot name
@@ -74,8 +71,6 @@ def main():
             "left_ankle_roll_link", "right_ankle_roll_link", "left_palm_link", "right_palm_link",
             "pelvis"
         ]
-    
-
 
     # Create robot.
     robot = pk.Robot.from_urdf(urdf)
@@ -87,6 +82,7 @@ def main():
         contact_threshold=0.01,    # Lower threshold for humanoid feet
         record_velocities=True,
         record_accelerations=True,
+        urdf_path=urdf_path if args.urdf else None,    # Pass URDF path if using custom URDF
     )
 
     # Set up visualizer.
