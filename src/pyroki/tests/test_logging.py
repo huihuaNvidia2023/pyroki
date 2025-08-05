@@ -329,6 +329,84 @@ def test_extensible_metadata():
         shutil.rmtree(temp_dir)
 
 
+def test_joint_name_position_correspondence():
+    """Test that joint names and positions have correct correspondence."""
+    print("\n=== Testing joint name/position correspondence ===")
+
+    # Load robot
+    urdf = load_robot_description("panda_description")
+    robot = pk.Robot.from_urdf(urdf)
+
+    # Create temporary directory
+    temp_dir = tempfile.mkdtemp()
+
+    try:
+        logger = pk.logging.DataLogger(robot=robot, output_dir=temp_dir)
+
+        # Create a unique configuration where each joint has a different value
+        # This makes it easy to verify correspondence
+        joint_cfg = np.arange(robot.joints.num_actuated_joints, dtype=np.float32)
+
+        # Start episode
+        logger.start_episode()
+
+        # Record frame
+        logger.record_frame(joint_cfg)
+
+        # Save and load
+        filepath = logger.save_episode()
+        loaded_episode = pk.logging.DataLogger.load_episode(filepath)
+
+        # Get the frame
+        frame = loaded_episode.frames[0]
+
+        # Verify that joint names match robot's actuated names
+        assert frame.joint_names == list(robot.joints.actuated_names), \
+            "Joint names in frame don't match robot's actuated names"
+
+        # Verify correspondence by checking each joint individually
+        for i, joint_name in enumerate(frame.joint_names):
+            # The position should match the index we used in joint_cfg
+            assert frame.joint_positions[i] == i, \
+                f"Joint '{joint_name}' at index {i} has position {frame.joint_positions[i]}, expected {i}"
+
+            # Also verify this joint is in the robot's actuated joints
+            assert joint_name in robot.joints.actuated_names, \
+                f"Joint '{joint_name}' not found in robot's actuated joints"
+
+            # Verify the index matches
+            robot_joint_idx = robot.joints.actuated_names.index(joint_name)
+            assert robot_joint_idx == i, \
+                f"Joint '{joint_name}' has index {i} in frame but {robot_joint_idx} in robot"
+
+        # Test querying by name manually
+        for i, joint_name in enumerate(frame.joint_names):
+            joint_idx = frame.joint_names.index(joint_name)
+            joint_position = frame.joint_positions[joint_idx]
+            assert joint_position == i, \
+                f"Querying joint '{joint_name}' by name gives position {joint_position}, expected {i}"
+
+        # Test the helper method get_joint_position
+        for i, joint_name in enumerate(frame.joint_names):
+            position = frame.get_joint_position(joint_name)
+            assert position == i, \
+                f"get_joint_position('{joint_name}') returned {position}, expected {i}"
+
+        # Test that invalid joint name raises error
+        try:
+            frame.get_joint_position("nonexistent_joint")
+            assert False, "Should have raised ValueError for nonexistent joint"
+        except ValueError as e:
+            assert "not found" in str(e), f"Error message should mention 'not found': {e}"
+
+        print("✓ Joint name/position correspondence test passed")
+        print(f"  Verified {len(frame.joint_names)} joints with correct correspondence")
+
+    finally:
+        # Cleanup
+        shutil.rmtree(temp_dir)
+
+
 def run_all_tests():
     """Run all logging tests."""
     print("Running PyRoKi logging module tests...")
@@ -341,6 +419,7 @@ def run_all_tests():
         test_custom_compute_functions,
         test_episode_numbering,
         test_extensible_metadata,
+        test_joint_name_position_correspondence,
     ]
 
     failed_tests = []

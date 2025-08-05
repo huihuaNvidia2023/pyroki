@@ -39,6 +39,42 @@ class FrameData:
     # Contact status
     contact_status: np.ndarray    # Shape: (M,) - bool array
 
+    def get_joint_position(self, joint_name: str) -> float:
+        """Get the position of a specific joint by name.
+        
+        Args:
+            joint_name: Name of the joint
+            
+        Returns:
+            Position value for the joint
+            
+        Raises:
+            ValueError: If joint name not found
+        """
+        try:
+            idx = self.joint_names.index(joint_name)
+            return float(self.joint_positions[idx])
+        except ValueError:
+            raise ValueError(f"Joint '{joint_name}' not found in frame. Available joints: {self.joint_names}")
+    
+    def get_link_pose(self, link_name: str) -> tuple[np.ndarray, np.ndarray]:
+        """Get the position and rotation of a specific link by name.
+        
+        Args:
+            link_name: Name of the link
+            
+        Returns:
+            Tuple of (position, quaternion) for the link
+            
+        Raises:
+            ValueError: If link name not found
+        """
+        try:
+            idx = self.link_names.index(link_name)
+            return self.link_positions[idx], self.link_rotations[idx]
+        except ValueError:
+            raise ValueError(f"Link '{link_name}' not found in frame. Available links: {self.link_names}")
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for parquet storage."""
         return {
