@@ -8,6 +8,9 @@ import time
 import viser
 from robot_descriptions.loaders.yourdfpy import load_robot_description
 import numpy as np
+import argparse
+from pathlib import Path
+import yourdfpy
 
 import pyroki as pk
 from viser.extras import ViserUrdf
@@ -16,13 +19,63 @@ import pyroki_snippets as pks
 
 def main():
     """Main function for humanoid IK with mobile base and data logging."""
+    
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description="Mobile Humanoid IK with Data Logging")
+    parser.add_argument(
+        "--robot-name",
+        "-r",
+        type=str,
+        help="Robot name for loading from robot_descriptions (e.g., 'g1', 'panda', 'ur5')",
+        default="g1"
+    )
+    parser.add_argument(
+        "--urdf",
+        "-u",
+        type=str,
+        help="Path to URDF file (overrides robot-name if provided)",
+        default=""
+    )
+    args = parser.parse_args()
+    
+    # TODO: Factor out this part into a function.
+    # Load URDF either from file or using robot_descriptions
+    if args.urdf:
+        # Load from URDF file path
+        urdf_path = Path(args.urdf)
+        if not urdf_path.is_absolute():
+            # Make relative paths relative to the workspace root
+            urdf_path = Path.cwd() / urdf_path
+        
+        if not urdf_path.exists():
+            raise FileNotFoundError(f"URDF file not found: {urdf_path}")
+        
+        print(f"Loading URDF from file: {urdf_path}")
+        
+        # Define filename handler for resolving mesh paths
+        def filename_handler(fname: str) -> str:
+            # Handle mesh paths relative to URDF file location
+            base_path = urdf_path.parent
+            return yourdfpy.filename_handler_magic(fname, dir=base_path)
+        
+        urdf = yourdfpy.URDF.load(str(urdf_path), filename_handler=filename_handler)
+        urdf.robot.name = args.robot_name
 
-    urdf = load_robot_description("g1_description")
-    all_target_link_names = [
-        "left_ankle_roll_link", "right_ankle_roll_link", "left_palm_link", "right_palm_link",
-        "pelvis"
-    ]
-    hand_target_link_names = ["left_palm_link", "right_palm_link"]
+        all_target_link_names = [
+            "left_ankle_roll_link", "right_ankle_roll_link", "left_wrist_yaw_link", "right_wrist_yaw_link",
+            "pelvis"
+        ]
+    else:
+        # Load from robot_descriptions using robot name
+        print(f"Loading robot description: {args.robot_name}_description")
+        urdf = load_robot_description(f"{args.robot_name}_description")
+
+        all_target_link_names = [
+            "left_ankle_roll_link", "right_ankle_roll_link", "left_palm_link", "right_palm_link",
+            "pelvis"
+        ]
+    
+
 
     # Create robot.
     robot = pk.Robot.from_urdf(urdf)
